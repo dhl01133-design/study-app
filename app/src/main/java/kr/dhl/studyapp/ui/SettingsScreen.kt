@@ -1,4 +1,4 @@
-package kr.dhl.studyapp
+package kr.dhl.studyapp.ui
 
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -45,6 +45,11 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kr.dhl.studyapp.data.Repo
+import kr.dhl.studyapp.data.Store
+import kr.dhl.studyapp.i18n.L
+import kr.dhl.studyapp.i18n.tr
+import kr.dhl.studyapp.notify.Notify
 import java.time.LocalDateTime
 
 @SuppressLint("BatteryLife")
@@ -62,6 +67,36 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
     var brief by remember { mutableStateOf(prefs.briefingText) }
     var offsets by remember { mutableStateOf(prefs.offsetsText) }
     var onlyIcampus by remember { mutableStateOf(prefs.onlyIcampus) }
+
+    fun saveAndSync() {
+        prefs.todoistToken = token
+        prefs.icsText = ics
+        prefs.marketUrl = market
+        prefs.briefingText = brief
+        prefs.offsetsText = offsets
+        scope.launch {
+            val s = runCatching { repo.sync() }.getOrNull()
+            snackbar.showSnackbar(
+                when {
+                    s == null -> tr("동기화 실패", "Sync failed")
+                    s.errors.isEmpty() -> tr("저장됨", "Saved")
+                    else -> s.errors.first()
+                },
+            )
+        }
+    }
+
+    fun setLanguage(mode: String) {
+        prefs.langMode = mode
+        L.apply(mode)
+        Notify.channels(ctx)  // rename the channels in Android settings
+        Store.lang.value = mode
+    }
+
+    fun setTheme(mode: String) {
+        prefs.themeMode = mode
+        Store.theme.value = mode
+    }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
         focusedContainerColor = p.tile, unfocusedContainerColor = p.tile,
@@ -81,22 +116,14 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
             Text(tr("언어", "Language"), fontSize = 14.sp, color = p.sub, modifier = Modifier.padding(bottom = 8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("system" to tr("시스템", "System"), "ko" to "한국어", "en" to "English").forEach { (k, label) ->
-                    Pill(label, Modifier.weight(1f), selected = lang == k) {
-                        prefs.langMode = k
-                        L.apply(k)
-                        Notify.channels(ctx)
-                        Store.lang.value = k
-                    }
+                    Pill(label, Modifier.weight(1f), selected = lang == k) { setLanguage(k) }
                 }
             }
             Spacer(Modifier.height(14.dp))
             Text(tr("테마", "Theme"), fontSize = 14.sp, color = p.sub, modifier = Modifier.padding(bottom = 8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("system" to tr("시스템", "System"), "light" to tr("라이트", "Light"), "dark" to tr("다크", "Dark")).forEach { (k, label) ->
-                    Pill(label, Modifier.weight(1f), selected = theme == k) {
-                        prefs.themeMode = k
-                        Store.theme.value = k
-                    }
+                    Pill(label, Modifier.weight(1f), selected = theme == k) { setTheme(k) }
                 }
             }
             Spacer(Modifier.height(14.dp))
@@ -156,19 +183,7 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
 
         Box(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.accent)
-                .clickable {
-                    prefs.todoistToken = token; prefs.icsText = ics; prefs.marketUrl = market
-                    prefs.briefingText = brief; prefs.offsetsText = offsets; prefs.onlyIcampus = onlyIcampus
-                    scope.launch {
-                        val s = runCatching { repo.sync() }.getOrNull()
-                        val msg = when {
-                            s == null -> tr("동기화 실패", "Sync failed")
-                            s.errors.isEmpty() -> tr("저장됨", "Saved")
-                            else -> s.errors.first()
-                        }
-                        snackbar.showSnackbar(msg)
-                    }
-                }
+                .clickable(onClick = ::saveAndSync)
                 .padding(vertical = 17.dp),
             contentAlignment = Alignment.Center,
         ) { Text(tr("저장", "Save"), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) }

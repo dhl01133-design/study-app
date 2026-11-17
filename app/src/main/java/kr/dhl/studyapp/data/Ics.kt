@@ -1,4 +1,4 @@
-package kr.dhl.studyapp
+package kr.dhl.studyapp.data
 
 import java.time.DayOfWeek
 import java.time.Duration

@@ -1,10 +1,13 @@
-package kr.dhl.studyapp
+package kr.dhl.studyapp.data
 
 import kotlinx.serialization.Serializable
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.LocalTime
 
+private val END_OF_DAY: LocalTime = LocalTime.of(23, 59)
+
+/** An open Todoist task. Its Todoist date is the day you plan to work on it. */
 @Serializable
 data class TaskItem(
     val id: String,
@@ -23,38 +26,38 @@ data class TaskItem(
     val time: LocalTime? get() = dueTime?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
     val course: String get() = Courses.prefix(content) ?: Courses.fromProject(projectName)
     val title: String get() = Courses.strip(content)
-    /** Todoist date/time = the day you plan to work on it. */
-    val deadline: LocalDateTime? get() = date?.atTime(time ?: LocalTime.of(23, 59))
+    val isIcampus: Boolean get() = "icampus" in labels
+    val isBookkeeping: Boolean get() = content.startsWith("🤖")
+
+    /** Planned date/time, 23:59 when there's no time. */
+    val planned: LocalDateTime? get() = date?.atTime(time ?: END_OF_DAY)
 
     /**
-     * Real deadline. Since 2026-11-17 some tasks carry a planned work day as their Todoist date and the real
-     * deadline in the description ("Due 11/22 23:59" / "마감 11/22"). Falls back to the Todoist date.
+     * Real deadline. Some tasks carry a planned work day as their Todoist date and the real deadline in the
+     * description ("Due 11/22 23:59" / "마감 11/22"; 23:59 when no time). Falls back to [planned].
      */
-    val realDeadline: LocalDateTime?
+    val deadline: LocalDateTime?
         get() {
-            val m = DUE_RE.find(description) ?: return deadline
-            val month = m.groupValues[1].toInt()
-            val day = m.groupValues[2].toInt()
+            val m = DUE_RE.find(description) ?: return planned
+            val (month, day, hour, minute) = m.destructured
+            val t = if (hour.isNotEmpty()) LocalTime.of(hour.toInt() % 24, minute.toInt()) else END_OF_DAY
             val base = date ?: LocalDate.now()
-            val t = if (m.groupValues[3].isNotEmpty()) LocalTime.of(m.groupValues[3].toInt() % 24, m.groupValues[4].toInt())
-            else LocalTime.of(23, 59)
             return runCatching {
-                var d = LocalDate.of(base.year, month, day)
+                var d = LocalDate.of(base.year, month.toInt(), day.toInt())
                 if (d.isBefore(base.minusMonths(6))) d = d.plusYears(1)
                 d.atTime(t)
-            }.getOrDefault(deadline)
+            }.getOrDefault(planned)
         }
 
-    /** True when the Todoist date is a planned day earlier than the real deadline. */
-    val isPlanned: Boolean get() = realDeadline?.toLocalDate()?.let { it != date } ?: false
-
-    val isBookkeeping: Boolean get() = content.startsWith("🤖")
+    /** True when the planned day differs from the real deadline. */
+    val isPlanned: Boolean get() = deadline?.toLocalDate()?.let { it != date } ?: false
 
     companion object {
         private val DUE_RE = Regex("(?:Due|due|마감)\\s*:?\\s*(\\d{1,2})/(\\d{1,2})(?:\\s*(?:at\\s*)?(\\d{1,2}):(\\d{2}))?")
     }
 }
 
+/** A Google Calendar event (or one occurrence of a recurring one), in local time. */
 @Serializable
 data class CalEvent(
     val uid: String,
@@ -69,6 +72,10 @@ data class CalEvent(
     val title: String get() = Courses.strip(summary)
     val isClass: Boolean get() = CLASS_RE.containsMatchIn(summary)
     val isDeadline: Boolean get() = !isClass && DEADLINE_RE.containsMatchIn(summary)
+    val isJob: Boolean get() = "알바" in summary
+
+    /** When a deadline event is due: its start, or 23:59 for an all-day event. */
+    val dueAt: LocalDateTime get() = if (allDay) startAt.toLocalDate().atTime(END_OF_DAY) else startAt
 
     fun occursOn(d: LocalDate): Boolean {
         val s = startAt
@@ -82,14 +89,15 @@ data class CalEvent(
     }
 
     companion object {
-        val CLASS_RE = Regex("수업\\s*$|출석")
-        val DEADLINE_RE = Regex("마감|due|제출|deadline", RegexOption.IGNORE_CASE)
+        private val CLASS_RE = Regex("수업\\s*$|출석")
+        private val DEADLINE_RE = Regex("마감|due|제출|deadline", RegexOption.IGNORE_CASE)
     }
 }
 
 @Serializable
 data class MarketItem(val name: String, val close: Double? = null, val pct: Double? = null)
 
+/** Everything the app shows, cached to disk between syncs. */
 @Serializable
 data class Snapshot(
     val fetchedAt: Long = 0,
@@ -98,23 +106,8 @@ data class Snapshot(
     val markets: List<MarketItem> = emptyList(),
     val marketSession: String? = null,
     val errors: List<String> = emptyList(),
-)
-
-object Courses {
-    private val PREFIX = Regex("^\\[([^\\]]+)]\\s*")
-
-    /** "[선형대수학] …" → 선형대수학, but only for real course names ("[과제2] …" stays part of the title). */
-    fun prefix(s: String): String? = PREFIX.find(s)?.groupValues?.get(1)?.takeIf { it in COLORS }
-    fun strip(s: String): String = if (prefix(s) != null) s.replaceFirst(PREFIX, "").ifBlank { s } else s
-    fun fromProject(p: String): String = if (p.isBlank() || p == "Inbox") "" else p
-
-    private val COLORS = mapOf(
-        "경제학입문" to 0xFF2F6FDF, "창의적글쓰기" to 0xFFC96A14,
-        "일반화학2" to 0xFF23874D, "General Chemistry 2" to 0xFF23874D,
-        "창의적융합디자인" to 0xFF7A45C4, "선형대수학" to 0xFFB4420F,
-        "미적분2" to 0xFF0B6C84, "Calculus 2" to 0xFF0B6C84,
-        "영어쓰기" to 0xFFB0175A, "영어작문" to 0xFFB0175A, "English Writing" to 0xFFB0175A,
-    )
-
-    fun color(c: String): Long = COLORS[c] ?: 0xFF5A6270
+) {
+    fun updateTask(id: String, f: (TaskItem) -> TaskItem) = copy(tasks = tasks.map { if (it.id == id) f(it) else it })
+    fun removeTask(id: String) = copy(tasks = tasks.filter { it.id != id })
+    fun addTask(t: TaskItem) = copy(tasks = tasks + t)
 }

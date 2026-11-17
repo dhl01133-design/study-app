@@ -1,14 +1,10 @@
-package kr.dhl.studyapp
+package kr.dhl.studyapp.ui
 
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -17,14 +13,8 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 
 /** Clean & minimal palette: white/near-black pages, soft borderless cards, one blue accent. */
 @Immutable
@@ -105,19 +95,4 @@ fun AppTheme(mode: String, content: @Composable () -> Unit) {
     CompositionLocalProvider(LocalPal provides p) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
-}
-
-/** Subtle course tag: course color text on a light tint of the same color. */
-@Composable
-fun CourseChip(course: String) {
-    if (course.isEmpty()) return
-    val p = pal
-    val base = Color(Courses.color(course))
-    val ink = if (p.dark) lerp(base, Color.White, 0.45f) else base
-    Text(
-        course, color = ink, fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
-        modifier = Modifier.clip(RoundedCornerShape(6.dp))
-            .background(base.copy(alpha = if (p.dark) 0.24f else 0.10f))
-            .padding(horizontal = 7.dp, vertical = 2.dp),
-    )
 }
