@@ -42,6 +42,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -62,6 +63,7 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
     val theme by Store.theme.collectAsState()
     val lang by Store.lang.collectAsState()
     var token by remember { mutableStateOf(prefs.todoistToken) }
+    var showToken by remember { mutableStateOf(false) }
     var ics by remember { mutableStateOf(prefs.icsText) }
     var market by remember { mutableStateOf(prefs.marketUrl) }
     var brief by remember { mutableStateOf(prefs.briefingText) }
@@ -143,7 +145,18 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
             OutlinedTextField(
                 token, { token = it }, Modifier.fillMaxWidth(),
                 label = { Text(tr("Todoist API 토큰", "Todoist API token")) }, singleLine = true,
-                visualTransformation = PasswordVisualTransformation(), colors = fieldColors, shape = fieldShape,
+                visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+                trailingIcon = {
+                    Text(
+                        if (showToken) "🙈" else "👁", fontSize = 18.sp,
+                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { showToken = !showToken }.padding(8.dp),
+                    )
+                },
+                supportingText = tokenLength(token)?.let { n ->
+                    { Text(tr("40자여야 해요 (지금 ${n}자)", "Should be 40 characters (now $n)"), color = p.danger) }
+                },
+                colors = fieldColors, shape = fieldShape,
             )
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
@@ -198,4 +211,10 @@ private fun Group(title: String, content: @Composable ColumnScope.() -> Unit) {
         Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = p.text, modifier = Modifier.padding(bottom = 12.dp))
         content()
     }
+}
+
+/** Length of the token as it will be saved, or null when it looks right (empty or 40 characters). */
+private fun tokenLength(raw: String): Int? {
+    val n = raw.count { !it.isWhitespace() && it != '"' && it != '\'' }
+    return if (n == 0 || n == 40) null else n
 }

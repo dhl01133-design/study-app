@@ -62,7 +62,11 @@ class Repo(ctx: Context) {
             return old.tasks
         }
         return runCatching { Todoist(prefs.todoistToken).tasks() }.getOrElse {
-            errors += "Todoist: ${it.message}"
+            errors += if (it.message.orEmpty().startsWith("HTTP 401") || it.message.orEmpty().startsWith("HTTP 403")) {
+                tr("Todoist 토큰이 올바르지 않아요", "Todoist token is invalid")
+            } else {
+                "Todoist: ${it.message}"
+            }
             old.tasks
         }
     }

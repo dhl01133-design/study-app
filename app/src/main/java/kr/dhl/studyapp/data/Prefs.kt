@@ -9,11 +9,12 @@ import kotlin.reflect.KProperty
 class Prefs(ctx: Context) {
     private val p = ctx.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    var todoistToken by string("todoist", "", trim = true)
-    var icsText by string("ics", "", trim = true)              // one iCal URL per line
-    var marketUrl by string("market", DEFAULT_MARKET, trim = true)
-    var briefingText by string("brief", "08:17", trim = true)
-    var offsetsText by string("offsets", "6,1", trim = true)
+    /** Spaces, line breaks and quotes picked up when copying are dropped. */
+    var todoistToken by string("todoist", "", clean = { s -> s.filterNot { it.isWhitespace() || it == '"' || it == '\'' } })
+    var icsText by string("ics", "", clean = { it.trim() })              // one iCal URL per line
+    var marketUrl by string("market", DEFAULT_MARKET, clean = { it.trim() })
+    var briefingText by string("brief", "08:17", clean = { it.trim() })
+    var offsetsText by string("offsets", "6,1", clean = { it.trim() })
     var themeMode by string("theme", "system")                 // system | light | dark
     var langMode by string("lang", "system")                   // system | ko | en
     var onlyIcampus by boolean("only_icampus", false)
@@ -33,9 +34,9 @@ class Prefs(ctx: Context) {
         get() = offsetsText.split(',', ' ').mapNotNull { it.trim().toIntOrNull() }
             .filter { it in 0..72 }.distinct().ifEmpty { listOf(6, 1) }
 
-    private fun string(key: String, default: String, trim: Boolean = false) = pref(
+    private fun string(key: String, default: String, clean: (String) -> String = { it }) = pref(
         { getString(key, default) ?: default },
-        { putString(key, if (trim) it.trim() else it) },
+        { putString(key, clean(it)) },
     )
 
     private fun boolean(key: String, default: Boolean) = pref({ getBoolean(key, default) }, { putBoolean(key, it) })
