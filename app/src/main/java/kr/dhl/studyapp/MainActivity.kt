@@ -162,11 +162,10 @@ fun AppRoot(repo: Repo, tab: MutableIntState) {
 }
 
 @Composable
-fun Header(kicker: String, title: String, syncing: Boolean, onRefresh: () -> Unit) {
+fun Header(title: String, syncing: Boolean, onRefresh: () -> Unit) {
     val p = pal
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
         Column(Modifier.weight(1f)) {
-            Text(kicker, fontSize = 14.sp, color = p.sub, fontWeight = FontWeight.Medium)
             Text(title, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = p.text, letterSpacing = (-0.5).sp)
         }
         Box(Modifier.size(44.dp).clip(CircleShape).background(p.card), contentAlignment = Alignment.Center) {

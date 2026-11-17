@@ -203,7 +203,7 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
             Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Header(tr("길게 눌러 다른 날로 끌어 놓기", "Long-press and drag to another day"), tr("할 일", "To-do"), syncing, onRefresh)
+            Header(tr("할 일", "To-do"), syncing, onRefresh)
 
             val overdue = tasks.filter { keyOf(it) == "overdue" }.sortedBy { it.deadline }
             if (overdue.isNotEmpty()) {
@@ -344,7 +344,7 @@ private fun TaskCard(t: TaskItem, onCheck: (() -> Unit)?) {
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CourseChip(t.course)
-                    if (t.recurring) Text(tr(" 반복", " repeats"), fontSize = 11.sp, color = p.sub)
+                    if (t.recurring) Text(" ↻", fontSize = 12.sp, color = p.sub)
                 }
             }
         }
@@ -377,18 +377,13 @@ private fun TaskDialog(
                 CourseChip(t.course)
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    tr("할 날  ", "Planned  ") + (t.date?.let { Brief.dayLabel(it) + (t.dueTime?.let { tm -> " $tm" } ?: "") } ?: tr("없음", "none")),
+                    (t.date?.let { Brief.dayLabel(it) + (t.dueTime?.let { tm -> " $tm" } ?: "") } ?: tr("없음", "none")),
                     fontSize = 14.sp, color = p.text,
                 )
-                t.realDeadline?.let {
+                if (t.isPlanned) t.realDeadline?.let {
                     Text(tr("마감  ", "Due  ") + Brief.dayLabel(it.toLocalDate()) + " " + Brief.hm(it.toLocalTime()), fontSize = 14.sp, color = p.danger)
                 }
-                if (t.description.isNotBlank()) {
-                    Text(t.description.take(300), fontSize = 13.sp, color = p.sub, modifier = Modifier.padding(top = 8.dp))
-                }
-                if (t.recurring) {
-                    Text(tr("반복 작업은 Todoist 앱에서 날짜를 바꿔 주세요.", "Change recurring tasks in the Todoist app."), fontSize = 12.sp, color = p.danger, modifier = Modifier.padding(top = 10.dp))
-                } else {
+                if (!t.recurring) {
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Pill(tr("오늘", "Today"), Modifier.weight(1f)) { onMove(today) }

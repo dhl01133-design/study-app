@@ -34,10 +34,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.text.SimpleDateFormat
 import java.time.LocalDate
-import java.util.Date
-import java.util.Locale
 import kotlin.math.max
 
 @Composable
@@ -54,7 +51,7 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { Header(tr("데일리 브리핑", "Daily briefing"), Brief.dayLabel(today), syncing, onRefresh) }
+        item { Header(Brief.dayLabel(today), syncing, onRefresh) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Stat("${todayLines.size}", tr("오늘 일정", "Today"), Modifier.weight(1f))
@@ -74,8 +71,7 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
         item {
             Card(tr("오늘 슬라이스", "Today's time")) {
                 SliceBar(slice)
-                Legend()
-                Spacer(Modifier.height(10.dp))
+                Spacer(Modifier.height(6.dp))
                 if (slice.free.isEmpty()) Text(tr("빈 시간 없음", "No free time"), color = p.sub, fontSize = 14.sp)
                 slice.free.forEach { (a, b) ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -113,13 +109,7 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
                 }
             }
         }
-        item {
-            val t = if (s.fetchedAt > 0) SimpleDateFormat("M/d HH:mm", Locale.KOREA).format(Date(s.fetchedAt)) else tr("아직 없음", "never")
-            Text(
-                tr("마지막 동기화 $t · 이동 1시간 기준", "Last sync $t · 1 h travel buffer"), fontSize = 12.sp, color = p.faint,
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
-            )
-        }
+        item { Spacer(Modifier.height(8.dp)) }
     }
 }
 
@@ -177,17 +167,6 @@ private fun MarketTile(m: MarketItem, modifier: Modifier) {
         Text(m.close?.let { "%,.2f".format(it) } ?: tr("확인 불가", "n/a"), fontWeight = FontWeight.Bold, fontSize = 17.sp, color = p.text)
         m.pct?.let {
             Text("%+.2f%%".format(it), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (it >= 0) p.up else p.down)
-        }
-    }
-}
-
-@Composable
-private fun Legend() {
-    val p = pal
-    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-        listOf(p.cls to tr("수업", "Class"), p.job to tr("알바", "Work"), p.ev to tr("기타", "Other"), p.travelLine to tr("이동", "Travel"), p.freeLine to tr("빈 시간", "Free")).forEach { (c, t) ->
-            Box(Modifier.padding(end = 4.dp).size(8.dp).clip(CircleShape).background(c))
-            Text(t, fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(end = 10.dp))
         }
     }
 }

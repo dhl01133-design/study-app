@@ -51,7 +51,7 @@ class Repo(ctx: Context) {
                 val today = LocalDate.now()
 
                 val tasks = if (prefs.todoistToken.isBlank()) {
-                    errors += tr("설정에서 Todoist 토큰을 입력하세요", "Enter your Todoist token in Settings")
+                    errors += tr("Todoist 토큰 없음", "No Todoist token")
                     old.tasks
                 } else runCatching { Todoist(prefs.todoistToken).tasks() }.getOrElse {
                     errors += "Todoist: ${it.message}"
@@ -60,7 +60,7 @@ class Repo(ctx: Context) {
 
                 val urls = prefs.icsUrls
                 val events = if (urls.isEmpty()) {
-                    errors += tr("설정에서 Google 캘린더 iCal 주소를 입력하세요", "Enter your Google Calendar iCal address in Settings")
+                    errors += tr("iCal 주소 없음", "No iCal URL")
                     old.events
                 } else {
                     var failed = false
