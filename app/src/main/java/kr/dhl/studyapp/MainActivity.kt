@@ -70,6 +70,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         tab.intValue = intent?.getIntExtra("tab", 0) ?: 0
         repo = Repo(this)
+        handleTestExtras(intent)
         repo.load()
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -80,6 +81,21 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         tab.intValue = intent.getIntExtra("tab", tab.intValue)
+        handleTestExtras(intent)
+    }
+
+    /** Used only by the emulator smoke test in GitHub Actions. */
+    private fun handleTestExtras(i: Intent?) {
+        if (i == null) return
+        if (i.getBooleanExtra("demo", false)) {
+            Store.demo = true
+            Store.snapshot.value = Demo.snapshot()
+        }
+        if (i.getBooleanExtra("demoNotify", false)) {
+            val s = Store.snapshot.value
+            Notify.briefing(this, s)
+            Notify.deadline(this, 998, "선형대수학", "WeBWorK hw11 외 2개", java.time.LocalDateTime.now().plusHours(6), 6)
+        }
     }
 
     override fun onResume() {

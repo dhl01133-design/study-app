@@ -15,6 +15,9 @@ object Store {
     val snapshot = MutableStateFlow(Snapshot())
     val syncing = MutableStateFlow(false)
     val lock = Mutex()
+
+    /** Emulator smoke test: show [Demo] data, never sync, save or call Todoist. */
+    @Volatile var demo = false
 }
 
 class Repo(ctx: Context) {
@@ -25,7 +28,7 @@ class Repo(ctx: Context) {
 
     fun load(): Snapshot {
         val cur = Store.snapshot.value
-        if (cur.fetchedAt > 0) return cur
+        if (cur.fetchedAt > 0 || Store.demo) return cur
         val s = runCatching { json.decodeFromString(Snapshot.serializer(), file.readText()) }.getOrNull() ?: Snapshot()
         Store.snapshot.value = s
         return s
@@ -33,10 +36,11 @@ class Repo(ctx: Context) {
 
     private fun save(s: Snapshot) {
         Store.snapshot.value = s
+        if (Store.demo) return
         runCatching { file.writeText(json.encodeToString(Snapshot.serializer(), s)) }
     }
 
-    suspend fun sync(): Snapshot = Store.lock.withLock {
+    suspend fun sync(): Snapshot = if (Store.demo) Store.snapshot.value else Store.lock.withLock {
         withContext(Dispatchers.IO) {
             Store.syncing.value = true
             try {
@@ -75,6 +79,7 @@ class Repo(ctx: Context) {
                 }
 
                 val s = Snapshot(System.currentTimeMillis(), tasks, events, markets, session, errors)
+                if (Store.demo) return@withContext Store.snapshot.value  // demo switched on mid-sync
                 save(s)
                 Alarms.reschedule(app, s)
                 s
@@ -94,7 +99,7 @@ class Repo(ctx: Context) {
     suspend fun moveTask(t: TaskItem, date: LocalDate?): Result<Unit> = withContext(Dispatchers.IO) {
         val before = Store.snapshot.value
         replaceTask(t.copy(dueDate = date?.toString(), dueTime = if (date == null) null else t.dueTime), t.id)
-        runCatching { Todoist(prefs.todoistToken).setDue(t.id, date, if (date == null) null else t.time) }
+        runCatching { if (!Store.demo) Todoist(prefs.todoistToken).setDue(t.id, date, if (date == null) null else t.time) }
             .onSuccess { Alarms.reschedule(app, Store.snapshot.value) }
             .onFailure { save(before) }
     }
@@ -102,7 +107,7 @@ class Repo(ctx: Context) {
     suspend fun complete(t: TaskItem): Result<Unit> = withContext(Dispatchers.IO) {
         val before = Store.snapshot.value
         replaceTask(null, t.id)
-        runCatching { Todoist(prefs.todoistToken).close(t.id) }
+        runCatching { if (!Store.demo) Todoist(prefs.todoistToken).close(t.id) }
             .onSuccess { Alarms.reschedule(app, Store.snapshot.value) }
             .onFailure { save(before) }
     }
@@ -110,7 +115,7 @@ class Repo(ctx: Context) {
     suspend fun reopen(t: TaskItem): Result<Unit> = withContext(Dispatchers.IO) {
         val s = Store.snapshot.value
         save(s.copy(tasks = s.tasks + t))
-        runCatching { Todoist(prefs.todoistToken).reopen(t.id) }
+        runCatching { if (!Store.demo) Todoist(prefs.todoistToken).reopen(t.id) }
             .onSuccess { Alarms.reschedule(app, Store.snapshot.value) }
             .onFailure { save(s) }
     }
