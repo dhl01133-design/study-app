@@ -41,6 +41,11 @@ class Prefs(ctx: Context) {
         get() = p.getBoolean("only_icampus", false)
         set(v) = p.edit().putBoolean("only_icampus", v).apply()
 
+    /** "system", "light" or "dark". */
+    var themeMode: String
+        get() = p.getString("theme", "system") ?: "system"
+        set(v) = p.edit().putString("theme", v).apply()
+
     var alarmCodes: Set<String>
         get() = p.getStringSet("alarm_codes", emptySet())?.toSet() ?: emptySet()
         set(v) = p.edit().putStringSet("alarm_codes", v).apply()

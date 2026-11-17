@@ -28,7 +28,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.MaterialTheme
+
 import androidx.compose.material3.SnackbarDuration
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
@@ -77,6 +77,7 @@ private const val DAYS_SHOWN = 14
 
 @Composable
 fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Boolean, onRefresh: () -> Unit) {
+    val p = pal
     val today = LocalDate.now()
     val tasks = Brief.tasks(s, repo.prefs)
     val scope = rememberCoroutineScope()
@@ -199,14 +200,14 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
         },
     ) {
         Column(
-            Modifier.fillMaxSize().verticalScroll(scroll).padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
+            Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 20.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Header("할 일 · 길게 눌러 다른 날로 끌어 놓기", "2주 일정", syncing, onRefresh)
+            Header("길게 눌러 다른 날로 끌어 놓기", "할 일", syncing, onRefresh)
 
             val overdue = tasks.filter { keyOf(it) == "overdue" }.sortedBy { it.deadline }
             if (overdue.isNotEmpty()) {
-                DaySection("overdue", "⚠ 지난 날짜 (다시 배치하세요)", null, false, Danger, { k, r -> targets[k] = r }) {
+                DaySection("overdue", "지난 날짜", null, false, p.danger, { k, r -> targets[k] = r }) {
                     overdue.forEach { t -> key(t.id) { DraggableTask(t) } }
                 }
             } else targets.remove("overdue")
@@ -218,13 +219,13 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
                 val events = s.events.filter { it.occursOn(d) }
                 val label = when (i) { 0 -> "오늘 · "; 1 -> "내일 · "; else -> "" } + Brief.dayLabel(d)
                 val weekend = d.dayOfWeek.value >= 6
-                DaySection(k, label, events, hovered == k, if (weekend) Color(0xFFB4420F) else Color(0xFF1C211D), { kk, r -> targets[kk] = r }) {
+                DaySection(k, label, events, hovered == k, if (weekend) p.danger else p.text, { kk, r -> targets[kk] = r }) {
                     dayTasks.forEach { t -> key(t.id) { DraggableTask(t) } }
                 }
             }
 
             val undated = tasks.filter { it.date == null }.sortedWith(compareBy<TaskItem>({ -it.priority }, { it.order }))
-            DaySection("none", "날짜 없음", null, hovered == "none", Muted, { k, r -> targets[k] = r }) {
+            DaySection("none", "날짜 없음", null, hovered == "none", p.sub, { k, r -> targets[k] = r }) {
                 undated.forEach { t -> key(t.id) { DraggableTask(t) } }
             }
             Spacer(Modifier.height(80.dp))
@@ -241,7 +242,7 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
                         )
                     }
                     .width(with(density) { dragWidth.toDp() })
-                    .shadow(10.dp, RoundedCornerShape(10.dp)),
+                    .shadow(16.dp, RoundedCornerShape(16.dp)),
             ) { TaskCard(t, onCheck = null) }
         }
     }
@@ -270,41 +271,42 @@ private fun DaySection(
     onBounds: (String, Rect) -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    val shape = RoundedCornerShape(12.dp)
+    val p = pal
+    val shape = RoundedCornerShape(22.dp)
     Column(
         Modifier
             .fillMaxWidth()
             .onGloballyPositioned { onBounds(key, it.boundsInRoot()) }
             .clip(shape)
-            .background(if (highlight) MaterialTheme.colorScheme.primaryContainer else Color.White)
-            .border(if (highlight) 2.dp else 1.dp, if (highlight) MaterialTheme.colorScheme.primary else Color(0xFFE6E8E5), shape)
-            .padding(10.dp)
-            .defaultMinSize(minHeight = 40.dp)
+            .background(if (highlight) p.accentSoft else p.card)
+            .then(if (highlight) Modifier.border(2.dp, p.accent, shape) else Modifier)
+            .padding(horizontal = 14.dp, vertical = 14.dp)
+            .defaultMinSize(minHeight = 44.dp)
             .animateContentSize(),
-        verticalArrangement = Arrangement.spacedBy(6.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = titleColor)
+        Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = titleColor, modifier = Modifier.padding(start = 4.dp))
         if (!events.isNullOrEmpty()) {
             val classes = events.filter { it.isClass && !it.allDay }
             if (classes.isNotEmpty()) {
                 Text(
-                    "수업 " + classes.joinToString(" · ") { Brief.hm(it.startAt.toLocalTime()) + " " + it.title.removeSuffix("수업").trim() },
-                    fontSize = 12.sp, color = Muted, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    "수업  " + classes.joinToString("  ·  ") { Brief.hm(it.startAt.toLocalTime()) + " " + it.title.removeSuffix("수업").trim() },
+                    fontSize = 12.sp, color = p.sub, maxLines = 2, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 4.dp),
                 )
             }
             events.filter { !it.isClass }.forEach { e ->
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp)) {
                     Text(
                         when {
                             e.allDay -> "종일"
                             e.isDeadline -> "~" + Brief.hm(e.startAt.toLocalTime())
                             else -> Brief.hm(e.startAt.toLocalTime())
                         },
-                        fontSize = 12.sp, color = Muted, modifier = Modifier.width(48.dp),
+                        fontSize = 12.sp, color = p.sub, modifier = Modifier.width(46.dp),
                     )
-                    Text("📅 ", fontSize = 12.sp)
-                    CourseChip(e.course)
-                    Text(" " + e.title, fontSize = 12.sp, color = Color(0xFF38414A), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Box(Modifier.size(6.dp).clip(CircleShape).background(if (e.isDeadline) p.danger else p.faint))
+                    Text("  " + e.title, fontSize = 13.sp, color = p.sub, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
                 }
             }
         }
@@ -312,38 +314,45 @@ private fun DaySection(
     }
 }
 
-private fun priorityColor(p: Int) = when (p) {
-    4 -> Color(0xFFD1453B)
-    3 -> Color(0xFFEB8909)
-    2 -> Color(0xFF246FE0)
-    else -> Color(0xFFA0A6A2)
+@Composable
+private fun priorityColor(pr: Int): Color {
+    val p = pal
+    return when (pr) {
+        4 -> p.danger
+        3 -> Color(0xFFFF9F0A)
+        2 -> p.accent
+        else -> p.faint
+    }
 }
 
 @Composable
 private fun TaskCard(t: TaskItem, onCheck: (() -> Unit)?) {
-    val shape = RoundedCornerShape(10.dp)
+    val p = pal
+    val shape = RoundedCornerShape(16.dp)
     Row(
-        Modifier.fillMaxWidth().clip(shape).background(Color(0xFFFAFBFA)).border(1.dp, Color(0xFFE1E4E0), shape)
-            .padding(horizontal = 10.dp, vertical = 9.dp),
+        Modifier.fillMaxWidth().clip(shape).background(p.tile).padding(horizontal = 14.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(22.dp).clip(CircleShape).border(2.dp, priorityColor(t.priority), CircleShape)
+            Modifier.size(24.dp).clip(CircleShape).border(2.dp, priorityColor(t.priority), CircleShape)
                 .then(if (onCheck != null) Modifier.clickable { onCheck() } else Modifier),
         )
-        Spacer(Modifier.width(10.dp))
+        Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
+            Text(t.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = p.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             if (t.course.isNotEmpty() || t.recurring) {
+                Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CourseChip(t.course)
-                    if (t.recurring) Text(" 🔁", fontSize = 11.sp)
+                    if (t.recurring) Text(" 반복", fontSize = 11.sp, color = p.sub)
                 }
             }
-            Text(t.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
         Column(horizontalAlignment = Alignment.End) {
-            t.dueTime?.let { Text(it, fontSize = 12.sp, color = Muted) }
-            if (t.isPlanned) t.realDeadline?.let { Text("마감 ${it.monthValue}/${it.dayOfMonth}", fontSize = 11.sp, color = Danger) }
+            t.dueTime?.let { Text(it, fontSize = 13.sp, color = p.sub, fontWeight = FontWeight.Medium) }
+            if (t.isPlanned) t.realDeadline?.let {
+                Text("마감 ${it.monthValue}/${it.dayOfMonth}", fontSize = 11.sp, color = p.danger, fontWeight = FontWeight.SemiBold)
+            }
         }
     }
 }
@@ -356,39 +365,61 @@ private fun TaskDialog(
     onPick: () -> Unit,
     onComplete: () -> Unit,
 ) {
+    val p = pal
     val today = LocalDate.now()
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(t.title, fontSize = 18.sp) },
+        containerColor = if (p.dark) p.card else Color.White,
+        shape = RoundedCornerShape(24.dp),
+        title = { Text(t.title, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = p.text) },
         text = {
             Column {
-                Row { CourseChip(t.course) }
+                CourseChip(t.course)
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    "할 날: " + (t.date?.let { Brief.dayLabel(it) + (t.dueTime?.let { tm -> " $tm" } ?: "") } ?: "없음") +
-                        (t.realDeadline?.let { "\n마감: " + Brief.dayLabel(it.toLocalDate()) + " " + Brief.hm(it.toLocalTime()) } ?: ""),
-                    fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 6.dp),
+                    "할 날  " + (t.date?.let { Brief.dayLabel(it) + (t.dueTime?.let { tm -> " $tm" } ?: "") } ?: "없음"),
+                    fontSize = 14.sp, color = p.text,
                 )
+                t.realDeadline?.let {
+                    Text("마감  " + Brief.dayLabel(it.toLocalDate()) + " " + Brief.hm(it.toLocalTime()), fontSize = 14.sp, color = p.danger)
+                }
                 if (t.description.isNotBlank()) {
-                    Text(t.description.take(300), fontSize = 13.sp, modifier = Modifier.padding(top = 6.dp))
+                    Text(t.description.take(300), fontSize = 13.sp, color = p.sub, modifier = Modifier.padding(top = 8.dp))
                 }
                 if (t.recurring) {
-                    Text("반복 작업은 Todoist 앱에서 날짜를 바꿔 주세요.", fontSize = 12.sp, color = Danger, modifier = Modifier.padding(top = 6.dp))
+                    Text("반복 작업은 Todoist 앱에서 날짜를 바꿔 주세요.", fontSize = 12.sp, color = p.danger, modifier = Modifier.padding(top = 10.dp))
                 } else {
-                    Row(Modifier.padding(top = 8.dp)) {
-                        TextButton(onClick = { onMove(today) }) { Text("오늘") }
-                        TextButton(onClick = { onMove(today.plusDays(1)) }) { Text("내일") }
-                        TextButton(onClick = { onMove((t.date ?: today).plusDays(7)) }) { Text("+1주") }
+                    Spacer(Modifier.height(14.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Pill("오늘", Modifier.weight(1f)) { onMove(today) }
+                        Pill("내일", Modifier.weight(1f)) { onMove(today.plusDays(1)) }
+                        Pill("+1주", Modifier.weight(1f)) { onMove((t.date ?: today).plusDays(7)) }
                     }
-                    Row {
-                        TextButton(onClick = onPick) { Text("날짜 선택…") }
-                        TextButton(onClick = { onMove(null) }) { Text("날짜 없음") }
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Pill("날짜 선택", Modifier.weight(1f)) { onPick() }
+                        Pill("날짜 없음", Modifier.weight(1f)) { onMove(null) }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onComplete) { Text("완료") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기") } },
+        confirmButton = { TextButton(onClick = onComplete) { Text("완료", fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기", color = p.sub) } },
     )
+}
+
+@Composable
+fun Pill(label: String, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit) {
+    val p = pal
+    Box(
+        modifier.clip(RoundedCornerShape(12.dp))
+            .background(if (selected) p.accent else if (p.dark) p.tile else p.card)
+            .clickable(onClick = onClick)
+            .padding(vertical = 11.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(label, fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = if (selected) Color.White else p.text)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)

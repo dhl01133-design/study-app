@@ -17,7 +17,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Home
@@ -26,14 +26,14 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.collectAsState
@@ -70,12 +70,16 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         tab.intValue = intent?.getIntExtra("tab", 0) ?: 0
         repo = Repo(this)
+        Store.theme.value = repo.prefs.themeMode
         handleTestExtras(intent)
         repo.load()
         if (Build.VERSION.SDK_INT >= 33 &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         ) askNotif.launch(Manifest.permission.POST_NOTIFICATIONS)
-        setContent { AppTheme { AppRoot(repo, tab) } }
+        setContent {
+            val mode by Store.theme.collectAsState()
+            AppTheme(mode) { AppRoot(repo, tab) }
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -91,6 +95,7 @@ class MainActivity : ComponentActivity() {
             Store.demo = true
             Store.snapshot.value = Demo.snapshot()
         }
+        i.getStringExtra("theme")?.let { Store.theme.value = it }
         if (i.getBooleanExtra("demoNotify", false)) {
             val s = Store.snapshot.value
             Notify.briefing(this, s)
@@ -107,18 +112,9 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private val Scheme = lightColorScheme(
-    primary = Color(0xFF23874D), onPrimary = Color.White,
-    primaryContainer = Color(0xFFE3F4EA), onPrimaryContainer = Color(0xFF17663F),
-    secondary = Color(0xFF2F6FDF), background = Color(0xFFFBFBFA), surface = Color.White,
-    surfaceVariant = Color(0xFFF3F4F2), onSurfaceVariant = Color(0xFF5F6862), error = Color(0xFFC4372D),
-)
-
-@Composable
-fun AppTheme(content: @Composable () -> Unit) = MaterialTheme(colorScheme = Scheme, content = content)
-
 @Composable
 fun AppRoot(repo: Repo, tab: MutableIntState) {
+    val p = pal
     val snap by Store.snapshot.collectAsState()
     val syncing by Store.syncing.collectAsState()
     val scope = rememberCoroutineScope()
@@ -126,13 +122,26 @@ fun AppRoot(repo: Repo, tab: MutableIntState) {
     val refresh: () -> Unit = { scope.launch { runCatching { repo.sync() } } }
 
     Scaffold(
-        containerColor = MaterialTheme.colorScheme.background,
-        snackbarHost = { SnackbarHost(snackbar) },
+        containerColor = p.bg,
+        snackbarHost = {
+            SnackbarHost(snackbar) { data ->
+                Snackbar(
+                    data, shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                    containerColor = if (p.dark) p.tile else Color(0xFF333D4B),
+                    contentColor = Color.White, actionColor = Color(0xFF90C2FF),
+                )
+            }
+        },
         bottomBar = {
-            NavigationBar(containerColor = Color.White) {
-                NavigationBarItem(tab.intValue == 0, { tab.intValue = 0 }, { Icon(Icons.Default.Home, null) }, label = { Text("브리핑") })
-                NavigationBarItem(tab.intValue == 1, { tab.intValue = 1 }, { Icon(Icons.Default.DateRange, null) }, label = { Text("할 일") })
-                NavigationBarItem(tab.intValue == 2, { tab.intValue = 2 }, { Icon(Icons.Default.Settings, null) }, label = { Text("설정") })
+            NavigationBar(containerColor = p.bg, tonalElevation = 0.dp) {
+                val colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = p.text, selectedTextColor = p.text,
+                    unselectedIconColor = p.faint, unselectedTextColor = p.faint,
+                    indicatorColor = Color.Transparent,
+                )
+                NavigationBarItem(tab.intValue == 0, { tab.intValue = 0 }, { Icon(Icons.Default.Home, null) }, label = { Text("브리핑", fontSize = 12.sp) }, colors = colors)
+                NavigationBarItem(tab.intValue == 1, { tab.intValue = 1 }, { Icon(Icons.Default.DateRange, null) }, label = { Text("할 일", fontSize = 12.sp) }, colors = colors)
+                NavigationBarItem(tab.intValue == 2, { tab.intValue = 2 }, { Icon(Icons.Default.Settings, null) }, label = { Text("설정", fontSize = 12.sp) }, colors = colors)
             }
         },
     ) { pad ->
@@ -146,32 +155,20 @@ fun AppRoot(repo: Repo, tab: MutableIntState) {
     }
 }
 
-// ---- shared bits ----
-
-val Muted = Color(0xFF5F6862)
-val Danger = Color(0xFFC4372D)
-
 @Composable
 fun Header(kicker: String, title: String, syncing: Boolean, onRefresh: () -> Unit) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+    val p = pal
+    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp)) {
         Column(Modifier.weight(1f)) {
-            Text(kicker, fontSize = 12.sp, color = Muted)
-            Text(title, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(kicker, fontSize = 14.sp, color = p.sub, fontWeight = FontWeight.Medium)
+            Text(title, fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = p.text, letterSpacing = (-0.5).sp)
         }
-        if (syncing) {
-            CircularProgressIndicator(Modifier.padding(12.dp).size(22.dp), strokeWidth = 2.dp)
-        } else {
-            IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, contentDescription = "동기화") }
+        Box(Modifier.size(44.dp).clip(CircleShape).background(p.card), contentAlignment = Alignment.Center) {
+            if (syncing) {
+                CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = p.accent)
+            } else {
+                IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, contentDescription = "동기화", tint = p.sub) }
+            }
         }
     }
-}
-
-@Composable
-fun CourseChip(course: String) {
-    if (course.isEmpty()) return
-    Text(
-        course, color = Color.White, fontSize = 11.sp,
-        modifier = Modifier.clip(RoundedCornerShape(4.dp)).background(Color(Courses.color(course)))
-            .padding(horizontal = 6.dp, vertical = 1.dp),
-    )
 }

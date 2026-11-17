@@ -111,7 +111,7 @@ else:
         log(f"task now at y={moved[1][1]} (tomorrow header y={dy}; was y={sy})")
 
 # 3. Task dialog
-t = find(lambda t: t.startswith("[과제2]"))
+t = find(lambda t: t.startswith("12주차"))
 if t:
     adb("shell", "input", "tap", str(t[1][0]), str(t[1][1]))
     time.sleep(1.5)
@@ -125,6 +125,18 @@ else:
 start("--ei", "tab", "2")
 time.sleep(1)
 shot("4_settings")
+
+# 4b. Dark mode
+start("--es", "theme", "dark", "--ei", "tab", "0")
+time.sleep(1.5)
+shot("6_dark_briefing")
+start("--ei", "tab", "1")
+time.sleep(1.5)
+shot("6_dark_week")
+start("--ei", "tab", "2")
+time.sleep(1)
+shot("6_dark_settings")
+start("--es", "theme", "light", "--ei", "tab", "0")
 
 # 5. Notifications
 start("--ez", "demoNotify", "true")

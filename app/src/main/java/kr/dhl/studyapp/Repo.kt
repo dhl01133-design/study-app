@@ -14,6 +14,7 @@ import java.time.LocalDate
 object Store {
     val snapshot = MutableStateFlow(Snapshot())
     val syncing = MutableStateFlow(false)
+    val theme = MutableStateFlow("system")
     val lock = Mutex()
 
     /** Emulator smoke test: show [Demo] data, never sync, save or call Todoist. */
