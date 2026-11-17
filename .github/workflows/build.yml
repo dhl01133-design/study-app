@@ -66,3 +66,13 @@ jobs:
         with:
           name: smoke-screenshots
           path: smoke/
+      - name: Publish screenshots as release "smoke"
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd smoke && zip -qr ../smoke.zip . && cd ..
+          gh release delete smoke --yes --cleanup-tag || true
+          gh release create smoke smoke.zip --prerelease \
+            --title "Emulator smoke test, build ${{ github.run_number }}" \
+            --notes "Screenshots and logs from the emulator run of ${{ github.sha }}"
