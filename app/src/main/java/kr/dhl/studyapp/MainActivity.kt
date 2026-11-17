@@ -22,6 +22,7 @@ import kr.dhl.studyapp.i18n.L
 import kr.dhl.studyapp.notify.Notify
 import kr.dhl.studyapp.ui.AppRoot
 import kr.dhl.studyapp.ui.AppTheme
+import kr.dhl.studyapp.update.Updater
 import java.time.LocalDateTime
 
 class MainActivity : ComponentActivity() {
@@ -59,6 +60,7 @@ class MainActivity : ComponentActivity() {
         if (System.currentTimeMillis() - Store.snapshot.value.fetchedAt > RESYNC_AFTER_MS) {
             lifecycleScope.launch { runCatching { repo.sync() } }
         }
+        lifecycleScope.launch { Updater.check(this@MainActivity, repo.prefs.githubToken) }
     }
 
     /** Opens a tab (from a notification). The other extras are used only by the emulator smoke test. */

@@ -9,8 +9,8 @@ import kotlin.reflect.KProperty
 class Prefs(ctx: Context) {
     private val p = ctx.applicationContext.getSharedPreferences("settings", Context.MODE_PRIVATE)
 
-    /** Spaces, line breaks and quotes picked up when copying are dropped. */
-    var todoistToken by string("todoist", "", clean = { s -> s.filterNot { it.isWhitespace() || it == '"' || it == '\'' } })
+    var todoistToken by string("todoist", "", clean = { cleanToken(it) })
+    var githubToken by string("github", "", clean = { cleanToken(it) })       // read-only, for app updates
     var icsText by string("ics", "", clean = { it.trim() })              // one iCal URL per line
     var marketUrl by string("market", DEFAULT_MARKET, clean = { it.trim() })
     var briefingText by string("brief", "08:17", clean = { it.trim() })
@@ -48,6 +48,9 @@ class Prefs(ctx: Context) {
         }
 
     companion object {
+        /** Drops spaces, line breaks and quotes picked up when copying a token. */
+        fun cleanToken(s: String) = s.filterNot { it.isWhitespace() || it == '"' || it == '\'' }
+
         const val DEFAULT_MARKET = "https://raw.githubusercontent.com/dhl01133-design/market-closes/main/markets.json"
     }
 }

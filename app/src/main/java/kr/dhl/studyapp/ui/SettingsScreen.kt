@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -27,6 +28,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextFieldColors
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -38,6 +40,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -46,11 +49,14 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kr.dhl.studyapp.data.Prefs
 import kr.dhl.studyapp.data.Repo
 import kr.dhl.studyapp.data.Store
 import kr.dhl.studyapp.i18n.L
 import kr.dhl.studyapp.i18n.tr
 import kr.dhl.studyapp.notify.Notify
+import kr.dhl.studyapp.update.UpdateState
+import kr.dhl.studyapp.update.Updater
 import java.time.LocalDateTime
 
 @SuppressLint("BatteryLife")
@@ -63,7 +69,8 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
     val theme by Store.theme.collectAsState()
     val lang by Store.lang.collectAsState()
     var token by remember { mutableStateOf(prefs.todoistToken) }
-    var showToken by remember { mutableStateOf(false) }
+    var github by remember { mutableStateOf(prefs.githubToken) }
+    val update by Updater.state.collectAsState()
     var ics by remember { mutableStateOf(prefs.icsText) }
     var market by remember { mutableStateOf(prefs.marketUrl) }
     var brief by remember { mutableStateOf(prefs.briefingText) }
@@ -72,6 +79,7 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
 
     fun saveAndSync() {
         prefs.todoistToken = token
+        prefs.githubToken = github
         prefs.icsText = ics
         prefs.marketUrl = market
         prefs.briefingText = brief
@@ -142,22 +150,7 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
         }
 
         Group(tr("연결", "Connections")) {
-            OutlinedTextField(
-                token, { token = it }, Modifier.fillMaxWidth(),
-                label = { Text(tr("Todoist API 토큰", "Todoist API token")) }, singleLine = true,
-                visualTransformation = if (showToken) VisualTransformation.None else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                trailingIcon = {
-                    Text(
-                        if (showToken) "🙈" else "👁", fontSize = 18.sp,
-                        modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { showToken = !showToken }.padding(8.dp),
-                    )
-                },
-                supportingText = tokenLength(token)?.let { n ->
-                    { Text(tr("40자여야 해요 (지금 ${n}자)", "Should be 40 characters (now $n)"), color = p.danger) }
-                },
-                colors = fieldColors, shape = fieldShape,
-            )
+            SecretField(token, { token = it }, tr("Todoist API 토큰", "Todoist API token"), fieldColors, fieldShape, expectedLength = 40)
             Spacer(Modifier.height(10.dp))
             OutlinedTextField(
                 ics, { ics = it }, Modifier.fillMaxWidth(),
@@ -194,6 +187,22 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
             }
         }
 
+        Group(tr("업데이트", "Updates")) {
+            SecretField(github, { github = it }, tr("GitHub 토큰", "GitHub token"), fieldColors, fieldShape)
+            Spacer(Modifier.height(10.dp))
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("build ${Updater.currentBuild(ctx)}", fontSize = 15.sp, color = p.sub, modifier = Modifier.weight(1f))
+                Pill(tr("확인", "Check"), Modifier.width(96.dp)) {
+                    prefs.githubToken = github
+                    scope.launch { Updater.check(ctx, prefs.githubToken, force = true) }
+                }
+            }
+            if (update != UpdateState.Idle) {
+                Spacer(Modifier.height(10.dp))
+                UpdateStatus(update, prefs)
+            }
+        }
+
         Box(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.accent)
                 .clickable(onClick = ::saveAndSync)
@@ -213,8 +222,32 @@ private fun Group(title: String, content: @Composable ColumnScope.() -> Unit) {
     }
 }
 
-/** Length of the token as it will be saved, or null when it looks right (empty or 40 characters). */
-private fun tokenLength(raw: String): Int? {
-    val n = raw.count { !it.isWhitespace() && it != '"' && it != '\'' }
-    return if (n == 0 || n == 40) null else n
+/** Password-style field with a show/hide toggle; warns when the cleaned token isn't [expectedLength] long. */
+@Composable
+private fun SecretField(
+    value: String,
+    onChange: (String) -> Unit,
+    label: String,
+    colors: TextFieldColors,
+    shape: Shape,
+    expectedLength: Int? = null,
+) {
+    var shown by remember { mutableStateOf(false) }
+    val n = Prefs.cleanToken(value).length
+    OutlinedTextField(
+        value, onChange, Modifier.fillMaxWidth(),
+        label = { Text(label) }, singleLine = true,
+        visualTransformation = if (shown) VisualTransformation.None else PasswordVisualTransformation(),
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
+        trailingIcon = {
+            Text(
+                if (shown) "🙈" else "👁", fontSize = 18.sp,
+                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { shown = !shown }.padding(8.dp),
+            )
+        },
+        supportingText = if (expectedLength != null && n != 0 && n != expectedLength) {
+            { Text(tr("${expectedLength}자여야 해요 (지금 ${n}자)", "Should be $expectedLength characters (now $n)"), color = pal.danger) }
+        } else null,
+        colors = colors, shape = shape,
+    )
 }

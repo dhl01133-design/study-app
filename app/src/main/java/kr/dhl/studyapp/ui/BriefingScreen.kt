@@ -49,6 +49,7 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         item { Header(Fmt.day(today), syncing, onRefresh) }
+        item { UpdateBanner(prefs) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Stat("${todayLines.size}", tr("오늘 일정", "Today"), Modifier.weight(1f))
