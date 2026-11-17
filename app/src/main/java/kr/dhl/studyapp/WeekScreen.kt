@@ -206,7 +206,7 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
 
             val overdue = tasks.filter { keyOf(it) == "overdue" }.sortedBy { it.deadline }
             if (overdue.isNotEmpty()) {
-                DaySection("overdue", "⚠ 기한 지남", null, false, Danger, { k, r -> targets[k] = r }) {
+                DaySection("overdue", "⚠ 지난 날짜 (다시 배치하세요)", null, false, Danger, { k, r -> targets[k] = r }) {
                     overdue.forEach { t -> key(t.id) { DraggableTask(t) } }
                 }
             } else targets.remove("overdue")
@@ -341,7 +341,10 @@ private fun TaskCard(t: TaskItem, onCheck: (() -> Unit)?) {
             }
             Text(t.title, fontWeight = FontWeight.SemiBold, fontSize = 14.sp, maxLines = 2, overflow = TextOverflow.Ellipsis)
         }
-        t.dueTime?.let { Text(it, fontSize = 12.sp, color = Muted) }
+        Column(horizontalAlignment = Alignment.End) {
+            t.dueTime?.let { Text(it, fontSize = 12.sp, color = Muted) }
+            if (t.isPlanned) t.realDeadline?.let { Text("마감 ${it.monthValue}/${it.dayOfMonth}", fontSize = 11.sp, color = Danger) }
+        }
     }
 }
 
@@ -361,7 +364,8 @@ private fun TaskDialog(
             Column {
                 Row { CourseChip(t.course) }
                 Text(
-                    "마감: " + (t.date?.let { Brief.dayLabel(it) + (t.dueTime?.let { tm -> " $tm" } ?: "") } ?: "없음"),
+                    "할 날: " + (t.date?.let { Brief.dayLabel(it) + (t.dueTime?.let { tm -> " $tm" } ?: "") } ?: "없음") +
+                        (t.realDeadline?.let { "\n마감: " + Brief.dayLabel(it.toLocalDate()) + " " + Brief.hm(it.toLocalTime()) } ?: ""),
                     fontSize = 13.sp, color = Muted, modifier = Modifier.padding(top = 6.dp),
                 )
                 if (t.description.isNotBlank()) {

@@ -23,8 +23,36 @@ data class TaskItem(
     val time: LocalTime? get() = dueTime?.let { runCatching { LocalTime.parse(it) }.getOrNull() }
     val course: String get() = Courses.prefix(content) ?: Courses.fromProject(projectName)
     val title: String get() = Courses.strip(content)
+    /** Todoist date/time = the day you plan to work on it. */
     val deadline: LocalDateTime? get() = date?.atTime(time ?: LocalTime.of(23, 59))
+
+    /**
+     * Real deadline. Since 2026-11-17 some tasks carry a planned work day as their Todoist date and the real
+     * deadline in the description ("Due 11/22 23:59" / "마감 11/22"). Falls back to the Todoist date.
+     */
+    val realDeadline: LocalDateTime?
+        get() {
+            val m = DUE_RE.find(description) ?: return deadline
+            val month = m.groupValues[1].toInt()
+            val day = m.groupValues[2].toInt()
+            val base = date ?: LocalDate.now()
+            val t = if (m.groupValues[3].isNotEmpty()) LocalTime.of(m.groupValues[3].toInt() % 24, m.groupValues[4].toInt())
+            else LocalTime.of(23, 59)
+            return runCatching {
+                var d = LocalDate.of(base.year, month, day)
+                if (d.isBefore(base.minusMonths(6))) d = d.plusYears(1)
+                d.atTime(t)
+            }.getOrDefault(deadline)
+        }
+
+    /** True when the Todoist date is a planned day earlier than the real deadline. */
+    val isPlanned: Boolean get() = realDeadline?.toLocalDate()?.let { it != date } ?: false
+
     val isBookkeeping: Boolean get() = content.startsWith("🤖")
+
+    companion object {
+        private val DUE_RE = Regex("(?:Due|due|마감)\\s*:?\\s*(\\d{1,2})/(\\d{1,2})(?:\\s*(?:at\\s*)?(\\d{1,2}):(\\d{2}))?")
+    }
 }
 
 @Serializable

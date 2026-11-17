@@ -63,7 +63,19 @@ object Alarms {
         }
         val now = LocalDateTime.now()
         val codes = mutableSetOf<String>()
-        for (d in Brief.deadlines(s, now, now.plusDays(7))) {
+        // One alarm per deadline time: 19 tasks all due 11/22 23:59 ring once, listing them.
+        val groups = Brief.deadlines(s, now, now.plusDays(7)).groupBy { it.at }.map { (at, ds) ->
+            val courses = ds.map { it.course }.distinct()
+            Deadline(
+                "at:$at",
+                if (courses.size == 1) courses[0] else "",
+                if (ds.size == 1) ds[0].title
+                else "${ds.size}개 — " + ds.take(6).joinToString(", ") { (if (courses.size > 1 && it.course.isNotEmpty()) "[${it.course}] " else "") + it.title } +
+                    (if (ds.size > 6) " 외 ${ds.size - 6}개" else ""),
+                at,
+            )
+        }
+        for (d in groups) {
             for (h in p.alarmOffsets) {
                 val trig = d.at.minusHours(h.toLong())
                 if (!trig.isAfter(now)) continue

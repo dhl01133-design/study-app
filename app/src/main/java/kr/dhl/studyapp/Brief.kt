@@ -38,7 +38,7 @@ object Brief {
     fun deadlines(s: Snapshot, from: LocalDateTime, to: LocalDateTime): List<Deadline> {
         val list = mutableListOf<Deadline>()
         s.tasks.filter { !it.isBookkeeping && "icampus" in it.labels }.forEach { t ->
-            t.deadline?.let { list += Deadline("t:${t.id}", t.course, t.title, it) }
+            t.realDeadline?.let { list += Deadline("t:${t.id}", t.course, t.title, it) }
         }
         s.events.filter { it.isDeadline }.forEach { e ->
             val at = if (e.allDay) e.startAt.toLocalDate().atTime(23, 59) else e.startAt
@@ -50,9 +50,12 @@ object Brief {
             .sortedBy { it.at }
     }
 
-    fun overdue(s: Snapshot, p: Prefs, today: LocalDate): List<Line> =
-        tasks(s, p).filter { t -> t.date?.isBefore(today) == true }.sortedBy { it.deadline }
-            .map { Line("${it.date!!.monthValue}/${it.date!!.dayOfMonth}", it.course, it.title, it.id) }
+    /** Tasks whose real deadline has passed (planned work days don't count). */
+    fun overdue(s: Snapshot, p: Prefs, today: LocalDate): List<Line> {
+        return tasks(s, p).filter { t -> t.realDeadline?.toLocalDate()?.isBefore(today) == true }
+            .sortedBy { it.realDeadline }
+            .map { val d = it.realDeadline!!.toLocalDate(); Line("${d.monthValue}/${d.dayOfMonth}", it.course, it.title, it.id) }
+    }
 
     private fun eventLine(e: CalEvent, d: LocalDate): Line {
         val time = when {
@@ -64,7 +67,10 @@ object Brief {
         return Line(time, e.course, e.title)
     }
 
-    private fun taskLine(t: TaskItem) = Line(t.time?.let { "~" + hm(it) } ?: "오늘", t.course, t.title, t.id)
+    private fun dueNote(t: TaskItem): String =
+        if (t.isPlanned) t.realDeadline?.let { " (마감 ${it.monthValue}/${it.dayOfMonth})" } ?: "" else ""
+
+    private fun taskLine(t: TaskItem) = Line(t.time?.let { "~" + hm(it) } ?: "오늘", t.course, t.title + dueNote(t), t.id)
 
     fun todayLines(s: Snapshot, p: Prefs, today: LocalDate): List<Line> {
         val ev = s.events.filter { it.occursOn(today) }.sortedBy { it.start }.map { eventLine(it, today) }
@@ -77,7 +83,7 @@ object Brief {
         val d = today.plusDays(i.toLong())
         val ev = s.events.filter { it.occursOn(d) && !it.isClass }.map { eventLine(it, d) }
         val ts = tasks(s, p).filter { it.date == d }.sortedBy { it.deadline }
-            .map { Line(it.time?.let { t -> "~" + hm(t) } ?: "", it.course, it.title, it.id) }
+            .map { Line(it.time?.let { t -> "~" + hm(t) } ?: "", it.course, it.title + dueNote(it), it.id) }
         val lines = ev + ts
         if (lines.isEmpty()) null else dayLabel(d) to lines
     }
