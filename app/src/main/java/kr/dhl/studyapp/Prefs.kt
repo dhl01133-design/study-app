@@ -46,6 +46,11 @@ class Prefs(ctx: Context) {
         get() = p.getString("theme", "system") ?: "system"
         set(v) = p.edit().putString("theme", v).apply()
 
+    /** "system", "ko" or "en". */
+    var langMode: String
+        get() = p.getString("lang", "system") ?: "system"
+        set(v) = p.edit().putString("lang", v).apply()
+
     var alarmCodes: Set<String>
         get() = p.getStringSet("alarm_codes", emptySet())?.toSet() ?: emptySet()
         set(v) = p.edit().putStringSet("alarm_codes", v).apply()

@@ -106,11 +106,11 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
         scope.launch {
             val r = repo.moveTask(t, newDate)
             if (r.isFailure) {
-                snackbar.showSnackbar("옮기지 못했어요: ${r.exceptionOrNull()?.message ?: ""}")
+                snackbar.showSnackbar(tr("옮기지 못했어요: ", "Couldn't move: ") + (r.exceptionOrNull()?.message ?: ""))
                 return@launch
             }
-            val where = newDate?.let { Brief.dayLabel(it) } ?: "날짜 없음"
-            val res = snackbar.showSnackbar("‘${t.title}’ → $where", actionLabel = "되돌리기", duration = SnackbarDuration.Short)
+            val where = newDate?.let { Brief.dayLabel(it) } ?: tr("날짜 없음", "No date")
+            val res = snackbar.showSnackbar("‘${t.title}’ → $where", actionLabel = tr("되돌리기", "Undo"), duration = SnackbarDuration.Short)
             if (res == SnackbarResult.ActionPerformed) {
                 val cur = current(t.id) ?: return@launch
                 repo.moveTask(cur, oldDate)
@@ -122,10 +122,10 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
         scope.launch {
             val r = repo.complete(t)
             if (r.isFailure) {
-                snackbar.showSnackbar("완료하지 못했어요: ${r.exceptionOrNull()?.message ?: ""}")
+                snackbar.showSnackbar(tr("완료하지 못했어요: ", "Couldn't complete: ") + (r.exceptionOrNull()?.message ?: ""))
                 return@launch
             }
-            val res = snackbar.showSnackbar("‘${t.title}’ 완료", actionLabel = "되돌리기", duration = SnackbarDuration.Short)
+            val res = snackbar.showSnackbar(tr("‘${t.title}’ 완료", "‘${t.title}’ done"), actionLabel = tr("되돌리기", "Undo"), duration = SnackbarDuration.Short)
             if (res == SnackbarResult.ActionPerformed) repo.reopen(t)
         }
     }
@@ -165,7 +165,7 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
                         onDragStart = { off ->
                             val cur = current(t.id) ?: t
                             if (cur.recurring) {
-                                scope.launch { snackbar.showSnackbar("반복 작업은 Todoist 앱에서 옮겨 주세요") }
+                                scope.launch { snackbar.showSnackbar(tr("반복 작업은 Todoist 앱에서 옮겨 주세요", "Move recurring tasks in the Todoist app")) }
                             } else {
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                                 grab = off
@@ -203,11 +203,11 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
             Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 20.dp, vertical = 12.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            Header("길게 눌러 다른 날로 끌어 놓기", "할 일", syncing, onRefresh)
+            Header(tr("길게 눌러 다른 날로 끌어 놓기", "Long-press and drag to another day"), tr("할 일", "To-do"), syncing, onRefresh)
 
             val overdue = tasks.filter { keyOf(it) == "overdue" }.sortedBy { it.deadline }
             if (overdue.isNotEmpty()) {
-                DaySection("overdue", "지난 날짜", null, false, p.danger, { k, r -> targets[k] = r }) {
+                DaySection("overdue", tr("지난 날짜", "Past dates"), null, false, p.danger, { k, r -> targets[k] = r }) {
                     overdue.forEach { t -> key(t.id) { DraggableTask(t) } }
                 }
             } else targets.remove("overdue")
@@ -217,7 +217,7 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
                 val k = "d:$d"
                 val dayTasks = tasks.filter { it.date == d }.sortedWith(compareBy<TaskItem>({ it.time == null }, { it.time }, { -it.priority }, { it.order }))
                 val events = s.events.filter { it.occursOn(d) }
-                val label = when (i) { 0 -> "오늘 · "; 1 -> "내일 · "; else -> "" } + Brief.dayLabel(d)
+                val label = when (i) { 0 -> tr("오늘 · ", "Today · "); 1 -> tr("내일 · ", "Tomorrow · "); else -> "" } + Brief.dayLabel(d)
                 val weekend = d.dayOfWeek.value >= 6
                 DaySection(k, label, events, hovered == k, if (weekend) p.danger else p.text, { kk, r -> targets[kk] = r }) {
                     dayTasks.forEach { t -> key(t.id) { DraggableTask(t) } }
@@ -225,7 +225,7 @@ fun WeekScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
             }
 
             val undated = tasks.filter { it.date == null }.sortedWith(compareBy<TaskItem>({ -it.priority }, { it.order }))
-            DaySection("none", "날짜 없음", null, hovered == "none", p.sub, { k, r -> targets[k] = r }) {
+            DaySection("none", tr("날짜 없음", "No date"), null, hovered == "none", p.sub, { k, r -> targets[k] = r }) {
                 undated.forEach { t -> key(t.id) { DraggableTask(t) } }
             }
             Spacer(Modifier.height(80.dp))
@@ -290,7 +290,7 @@ private fun DaySection(
             val classes = events.filter { it.isClass && !it.allDay }
             if (classes.isNotEmpty()) {
                 Text(
-                    "수업  " + classes.joinToString("  ·  ") { Brief.hm(it.startAt.toLocalTime()) + " " + it.title.removeSuffix("수업").trim() },
+                    tr("수업  ", "Class  ") + classes.joinToString("  ·  ") { Brief.hm(it.startAt.toLocalTime()) + " " + it.title.removeSuffix("수업").trim() },
                     fontSize = 12.sp, color = p.sub, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(start = 4.dp),
                 )
@@ -299,7 +299,7 @@ private fun DaySection(
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 4.dp)) {
                     Text(
                         when {
-                            e.allDay -> "종일"
+                            e.allDay -> tr("종일", "All day")
                             e.isDeadline -> "~" + Brief.hm(e.startAt.toLocalTime())
                             else -> Brief.hm(e.startAt.toLocalTime())
                         },
@@ -344,14 +344,14 @@ private fun TaskCard(t: TaskItem, onCheck: (() -> Unit)?) {
                 Spacer(Modifier.height(4.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     CourseChip(t.course)
-                    if (t.recurring) Text(" 반복", fontSize = 11.sp, color = p.sub)
+                    if (t.recurring) Text(tr(" 반복", " repeats"), fontSize = 11.sp, color = p.sub)
                 }
             }
         }
         Column(horizontalAlignment = Alignment.End) {
             t.dueTime?.let { Text(it, fontSize = 13.sp, color = p.sub, fontWeight = FontWeight.Medium) }
             if (t.isPlanned) t.realDeadline?.let {
-                Text("마감 ${it.monthValue}/${it.dayOfMonth}", fontSize = 11.sp, color = p.danger, fontWeight = FontWeight.SemiBold)
+                Text(tr("마감 ", "Due ") + "${it.monthValue}/${it.dayOfMonth}", fontSize = 11.sp, color = p.danger, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -377,34 +377,34 @@ private fun TaskDialog(
                 CourseChip(t.course)
                 Spacer(Modifier.height(10.dp))
                 Text(
-                    "할 날  " + (t.date?.let { Brief.dayLabel(it) + (t.dueTime?.let { tm -> " $tm" } ?: "") } ?: "없음"),
+                    tr("할 날  ", "Planned  ") + (t.date?.let { Brief.dayLabel(it) + (t.dueTime?.let { tm -> " $tm" } ?: "") } ?: tr("없음", "none")),
                     fontSize = 14.sp, color = p.text,
                 )
                 t.realDeadline?.let {
-                    Text("마감  " + Brief.dayLabel(it.toLocalDate()) + " " + Brief.hm(it.toLocalTime()), fontSize = 14.sp, color = p.danger)
+                    Text(tr("마감  ", "Due  ") + Brief.dayLabel(it.toLocalDate()) + " " + Brief.hm(it.toLocalTime()), fontSize = 14.sp, color = p.danger)
                 }
                 if (t.description.isNotBlank()) {
                     Text(t.description.take(300), fontSize = 13.sp, color = p.sub, modifier = Modifier.padding(top = 8.dp))
                 }
                 if (t.recurring) {
-                    Text("반복 작업은 Todoist 앱에서 날짜를 바꿔 주세요.", fontSize = 12.sp, color = p.danger, modifier = Modifier.padding(top = 10.dp))
+                    Text(tr("반복 작업은 Todoist 앱에서 날짜를 바꿔 주세요.", "Change recurring tasks in the Todoist app."), fontSize = 12.sp, color = p.danger, modifier = Modifier.padding(top = 10.dp))
                 } else {
                     Spacer(Modifier.height(14.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Pill("오늘", Modifier.weight(1f)) { onMove(today) }
-                        Pill("내일", Modifier.weight(1f)) { onMove(today.plusDays(1)) }
-                        Pill("+1주", Modifier.weight(1f)) { onMove((t.date ?: today).plusDays(7)) }
+                        Pill(tr("오늘", "Today"), Modifier.weight(1f)) { onMove(today) }
+                        Pill(tr("내일", "Tomorrow"), Modifier.weight(1f)) { onMove(today.plusDays(1)) }
+                        Pill(tr("+1주", "+1 week"), Modifier.weight(1f)) { onMove((t.date ?: today).plusDays(7)) }
                     }
                     Spacer(Modifier.height(6.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Pill("날짜 선택", Modifier.weight(1f)) { onPick() }
-                        Pill("날짜 없음", Modifier.weight(1f)) { onMove(null) }
+                        Pill(tr("날짜 선택", "Pick date"), Modifier.weight(1f)) { onPick() }
+                        Pill(tr("날짜 없음", "No date"), Modifier.weight(1f)) { onMove(null) }
                     }
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onComplete) { Text("완료", fontWeight = FontWeight.Bold) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("닫기", color = p.sub) } },
+        confirmButton = { TextButton(onClick = onComplete) { Text(tr("완료", "Done"), fontWeight = FontWeight.Bold) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("닫기", "Close"), color = p.sub) } },
     )
 }
 
@@ -434,8 +434,8 @@ private fun PickDate(initial: LocalDate?, onPick: (LocalDate) -> Unit, onDismiss
             TextButton(onClick = {
                 state.selectedDateMillis?.let { onPick(Instant.ofEpochMilli(it).atZone(ZoneOffset.UTC).toLocalDate()) }
                 onDismiss()
-            }) { Text("옮기기") }
+            }) { Text(tr("옮기기", "Move")) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("취소") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(tr("취소", "Cancel")) } },
     ) { DatePicker(state = state) }
 }

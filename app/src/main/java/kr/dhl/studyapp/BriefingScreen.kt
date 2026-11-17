@@ -54,13 +54,13 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
         contentPadding = PaddingValues(horizontal = 20.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        item { Header("데일리 브리핑", Brief.dayLabel(today), syncing, onRefresh) }
+        item { Header(tr("데일리 브리핑", "Daily briefing"), Brief.dayLabel(today), syncing, onRefresh) }
         item {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Stat("${todayLines.size}", "오늘 일정", Modifier.weight(1f))
-                Stat(Brief.dur(slice.freeHours), "빈 시간", Modifier.weight(1f), color = p.freeInk)
-                Stat("${week.sumOf { it.second.size }}", "7일 내", Modifier.weight(1f))
-                Stat("${overdue.size}", "기한 지남", Modifier.weight(1f), color = if (overdue.isNotEmpty()) p.danger else p.text)
+                Stat("${todayLines.size}", tr("오늘 일정", "Today"), Modifier.weight(1f))
+                Stat(Brief.dur(slice.freeHours), tr("빈 시간", "Free"), Modifier.weight(1f), color = p.freeInk)
+                Stat("${week.sumOf { it.second.size }}", tr("7일 내", "Next 7d"), Modifier.weight(1f))
+                Stat("${overdue.size}", tr("기한 지남", "Overdue"), Modifier.weight(1f), color = if (overdue.isNotEmpty()) p.danger else p.text)
             }
         }
         if (s.errors.isNotEmpty()) item {
@@ -69,14 +69,14 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
             }
         }
         if (overdue.isNotEmpty()) item {
-            Card("기한 지남", titleColor = p.danger) { overdue.forEach { LineRow(it) } }
+            Card(tr("기한 지남", "Overdue"), titleColor = p.danger) { overdue.forEach { LineRow(it) } }
         }
         item {
-            Card("오늘 슬라이스") {
+            Card(tr("오늘 슬라이스", "Today's time")) {
                 SliceBar(slice)
                 Legend()
                 Spacer(Modifier.height(10.dp))
-                if (slice.free.isEmpty()) Text("빈 시간 없음", color = p.sub, fontSize = 14.sp)
+                if (slice.free.isEmpty()) Text(tr("빈 시간 없음", "No free time"), color = p.sub, fontSize = 14.sp)
                 slice.free.forEach { (a, b) ->
                     Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.size(8.dp).clip(CircleShape).background(p.freeLine))
@@ -87,13 +87,13 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
             }
         }
         item {
-            Card("오늘") {
-                if (todayLines.isEmpty()) Text("일정 없음", color = p.sub, fontSize = 14.sp)
+            Card(tr("오늘", "Today")) {
+                if (todayLines.isEmpty()) Text(tr("일정 없음", "Nothing scheduled"), color = p.sub, fontSize = 14.sp)
                 todayLines.forEach { LineRow(it) }
             }
         }
         if (s.markets.isNotEmpty()) item {
-            Card("간밤 미국장", trailing = s.marketSession?.let { "$it 마감" }) {
+            Card(tr("간밤 미국장", "US markets overnight"), trailing = s.marketSession?.let { tr("$it 마감", "$it close") }) {
                 s.markets.chunked(2).forEach { pair ->
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(vertical = 4.dp)) {
                         pair.forEach { m -> MarketTile(m, Modifier.weight(1f)) }
@@ -102,8 +102,8 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
             }
         }
         item {
-            Card("다음 7일") {
-                if (week.isEmpty()) Text("항목 없음", color = p.sub, fontSize = 14.sp)
+            Card(tr("다음 7일", "Next 7 days")) {
+                if (week.isEmpty()) Text(tr("항목 없음", "Nothing coming up"), color = p.sub, fontSize = 14.sp)
                 week.forEachIndexed { i, (label, lines) ->
                     Text(
                         label, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = p.sub,
@@ -114,9 +114,9 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
             }
         }
         item {
-            val t = if (s.fetchedAt > 0) SimpleDateFormat("M/d HH:mm", Locale.KOREA).format(Date(s.fetchedAt)) else "아직 없음"
+            val t = if (s.fetchedAt > 0) SimpleDateFormat("M/d HH:mm", Locale.KOREA).format(Date(s.fetchedAt)) else tr("아직 없음", "never")
             Text(
-                "마지막 동기화 $t · 이동 1시간 기준", fontSize = 12.sp, color = p.faint,
+                tr("마지막 동기화 $t · 이동 1시간 기준", "Last sync $t · 1 h travel buffer"), fontSize = 12.sp, color = p.faint,
                 modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
             )
         }
@@ -173,8 +173,8 @@ fun LineRow(l: Line) {
 private fun MarketTile(m: MarketItem, modifier: Modifier) {
     val p = pal
     Column(modifier.clip(RoundedCornerShape(16.dp)).background(p.tile).padding(horizontal = 14.dp, vertical = 12.dp)) {
-        Text(m.name, fontSize = 12.sp, color = p.sub)
-        Text(m.close?.let { "%,.2f".format(it) } ?: "확인 불가", fontWeight = FontWeight.Bold, fontSize = 17.sp, color = p.text)
+        Text(marketName(m.name), fontSize = 12.sp, color = p.sub)
+        Text(m.close?.let { "%,.2f".format(it) } ?: tr("확인 불가", "n/a"), fontWeight = FontWeight.Bold, fontSize = 17.sp, color = p.text)
         m.pct?.let {
             Text("%+.2f%%".format(it), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = if (it >= 0) p.up else p.down)
         }
@@ -185,7 +185,7 @@ private fun MarketTile(m: MarketItem, modifier: Modifier) {
 private fun Legend() {
     val p = pal
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 4.dp)) {
-        listOf(p.cls to "수업", p.job to "알바", p.ev to "기타", p.travelLine to "이동", p.freeLine to "빈 시간").forEach { (c, t) ->
+        listOf(p.cls to tr("수업", "Class"), p.job to tr("알바", "Work"), p.ev to tr("기타", "Other"), p.travelLine to tr("이동", "Travel"), p.freeLine to tr("빈 시간", "Free")).forEach { (c, t) ->
             Box(Modifier.padding(end = 4.dp).size(8.dp).clip(CircleShape).background(c))
             Text(t, fontSize = 12.sp, color = p.sub, modifier = Modifier.padding(end = 10.dp))
         }

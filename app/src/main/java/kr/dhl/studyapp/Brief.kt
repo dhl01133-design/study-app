@@ -23,8 +23,11 @@ object Brief {
     private const val DAY_END = 24.0
     private const val MIN_BLOCK = 0.5
     private const val DOW = "월화수목금토일"
+    private val DOW_EN = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
 
-    fun dayLabel(d: LocalDate) = "${d.monthValue}/${d.dayOfMonth} (${DOW[d.dayOfWeek.value - 1]})"
+    fun dayLabel(d: LocalDate) =
+        if (L.en) "${DOW_EN[d.dayOfWeek.value - 1]} ${d.monthValue}/${d.dayOfMonth}"
+        else "${d.monthValue}/${d.dayOfMonth} (${DOW[d.dayOfWeek.value - 1]})"
     fun hm(t: LocalTime) = "%02d:%02d".format(t.hour, t.minute)
     fun dur(h: Double): String {
         val m = Math.round(h * 60).toInt()
@@ -59,7 +62,7 @@ object Brief {
 
     private fun eventLine(e: CalEvent, d: LocalDate): Line {
         val time = when {
-            e.allDay -> "종일"
+            e.allDay -> tr("종일", "All day")
             e.isDeadline -> "~" + hm(e.startAt.toLocalTime())
             e.startAt.toLocalDate() == d -> hm(e.startAt.toLocalTime()) + "–" + hm(e.endAt.toLocalTime())
             else -> "~" + hm(e.endAt.toLocalTime())
@@ -68,9 +71,9 @@ object Brief {
     }
 
     private fun dueNote(t: TaskItem): String =
-        if (t.isPlanned) t.realDeadline?.let { " (마감 ${it.monthValue}/${it.dayOfMonth})" } ?: "" else ""
+        if (t.isPlanned) t.realDeadline?.let { tr(" (마감 ${it.monthValue}/${it.dayOfMonth})", " (due ${it.monthValue}/${it.dayOfMonth})") } ?: "" else ""
 
-    private fun taskLine(t: TaskItem) = Line(t.time?.let { "~" + hm(it) } ?: "오늘", t.course, t.title + dueNote(t), t.id)
+    private fun taskLine(t: TaskItem) = Line(t.time?.let { "~" + hm(it) } ?: tr("오늘", "Today"), t.course, t.title + dueNote(t), t.id)
 
     fun todayLines(s: Snapshot, p: Prefs, today: LocalDate): List<Line> {
         val ev = s.events.filter { it.occursOn(today) }.sortedBy { it.start }.map { eventLine(it, today) }
@@ -148,21 +151,22 @@ object Brief {
         val od = overdue(s, p, today).size
         val n = todayLines(s, p, today).size
         val free = slice(s, today).freeHours
-        return "오늘 ${n}개 · 빈 시간 ${dur(free)}" + if (od > 0) " · ⚠ 기한 지남 $od" else ""
+        return tr("오늘 ${n}개 · 빈 시간 ${dur(free)}", "$n today · ${dur(free)} free") +
+            if (od > 0) tr(" · ⚠ 기한 지남 $od", " · ⚠ $od overdue") else ""
     }
 
     fun summaryLines(s: Snapshot, p: Prefs, today: LocalDate): List<String> {
         val out = mutableListOf<String>()
         val od = overdue(s, p, today)
-        if (od.isNotEmpty()) out += "⚠ 기한 지남: " + od.take(4).joinToString(", ") { it.title }
+        if (od.isNotEmpty()) out += tr("⚠ 기한 지남: ", "⚠ Overdue: ") + od.take(4).joinToString(", ") { it.title }
         val td = todayLines(s, p, today)
-        if (td.isEmpty()) out += "📌 오늘 일정 없음"
+        if (td.isEmpty()) out += tr("📌 오늘 일정 없음", "📌 Nothing today")
         td.take(6).forEach { out += "📌 ${it.time} ${if (it.course.isNotEmpty()) "[${it.course}] " else ""}${it.title}" }
         val sl = slice(s, today)
-        out += if (sl.free.isEmpty()) "🟢 빈 시간 없음"
-        else "🟢 빈 시간 ${dur(sl.freeHours)}: " + sl.free.joinToString(", ") { "${fmtH(it.first)}–${fmtH(it.second)}" }
+        out += if (sl.free.isEmpty()) tr("🟢 빈 시간 없음", "🟢 No free time")
+        else tr("🟢 빈 시간 ${dur(sl.freeHours)}: ", "🟢 ${dur(sl.freeHours)} free: ") + sl.free.joinToString(", ") { "${fmtH(it.first)}–${fmtH(it.second)}" }
         val mk = s.markets.filter { it.pct != null }
-        if (mk.isNotEmpty()) out += "📈 " + mk.joinToString(" · ") { "${it.name} %+.2f%%".format(it.pct) }
+        if (mk.isNotEmpty()) out += "📈 " + mk.joinToString(" · ") { "${marketName(it.name)} %+.2f%%".format(it.pct) }
         val now = LocalDateTime.now()
         deadlines(s, now, now.plusDays(7)).take(4).forEach {
             out += "🗓 ${dayLabel(it.at.toLocalDate())} ${hm(it.at.toLocalTime())} ${if (it.course.isNotEmpty()) "[${it.course}] " else ""}${it.title}"

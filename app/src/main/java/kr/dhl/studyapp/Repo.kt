@@ -15,6 +15,7 @@ object Store {
     val snapshot = MutableStateFlow(Snapshot())
     val syncing = MutableStateFlow(false)
     val theme = MutableStateFlow("system")
+    val lang = MutableStateFlow("system")
     val lock = Mutex()
 
     /** Emulator smoke test: show [Demo] data, never sync, save or call Todoist. */
@@ -50,7 +51,7 @@ class Repo(ctx: Context) {
                 val today = LocalDate.now()
 
                 val tasks = if (prefs.todoistToken.isBlank()) {
-                    errors += "설정에서 Todoist 토큰을 입력하세요"
+                    errors += tr("설정에서 Todoist 토큰을 입력하세요", "Enter your Todoist token in Settings")
                     old.tasks
                 } else runCatching { Todoist(prefs.todoistToken).tasks() }.getOrElse {
                     errors += "Todoist: ${it.message}"
@@ -59,14 +60,14 @@ class Repo(ctx: Context) {
 
                 val urls = prefs.icsUrls
                 val events = if (urls.isEmpty()) {
-                    errors += "설정에서 Google 캘린더 iCal 주소를 입력하세요"
+                    errors += tr("설정에서 Google 캘린더 iCal 주소를 입력하세요", "Enter your Google Calendar iCal address in Settings")
                     old.events
                 } else {
                     var failed = false
                     val all = urls.flatMap { u ->
                         runCatching { Ics.parse(Http.request(u), today.minusDays(7), today.plusDays(28)) }.getOrElse {
                             failed = true
-                            errors += "캘린더: ${it.message}"
+                            errors += tr("캘린더: ", "Calendar: ") + it.message
                             emptyList()
                         }
                     }
@@ -75,7 +76,7 @@ class Repo(ctx: Context) {
 
                 val (markets, session) = if (prefs.marketUrl.isBlank()) old.markets to old.marketSession
                 else runCatching { Markets.fetch(prefs.marketUrl) }.getOrElse {
-                    errors += "시장 데이터: ${it.message}"
+                    errors += tr("시장 데이터: ", "Markets: ") + it.message
                     old.markets to old.marketSession
                 }
 

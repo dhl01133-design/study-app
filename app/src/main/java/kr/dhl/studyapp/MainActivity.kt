@@ -38,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -54,6 +55,7 @@ import kotlinx.coroutines.launch
 class App : Application() {
     override fun onCreate() {
         super.onCreate()
+        L.apply(Prefs(this).langMode)
         Notify.channels(this)
         SyncWorker.schedule(this)
         Alarms.scheduleBriefing(this)
@@ -71,6 +73,8 @@ class MainActivity : ComponentActivity() {
         tab.intValue = intent?.getIntExtra("tab", 0) ?: 0
         repo = Repo(this)
         Store.theme.value = repo.prefs.themeMode
+        Store.lang.value = repo.prefs.langMode
+        L.apply(repo.prefs.langMode)
         handleTestExtras(intent)
         repo.load()
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -78,7 +82,8 @@ class MainActivity : ComponentActivity() {
         ) askNotif.launch(Manifest.permission.POST_NOTIFICATIONS)
         setContent {
             val mode by Store.theme.collectAsState()
-            AppTheme(mode) { AppRoot(repo, tab) }
+            val lang by Store.lang.collectAsState()
+            AppTheme(mode) { key(lang) { AppRoot(repo, tab) } }
         }
     }
 
@@ -96,6 +101,7 @@ class MainActivity : ComponentActivity() {
             Store.snapshot.value = Demo.snapshot()
         }
         i.getStringExtra("theme")?.let { Store.theme.value = it }
+        i.getStringExtra("lang")?.let { L.apply(it); Store.lang.value = it }
         if (i.getBooleanExtra("demoNotify", false)) {
             val s = Store.snapshot.value
             Notify.briefing(this, s)
@@ -139,9 +145,9 @@ fun AppRoot(repo: Repo, tab: MutableIntState) {
                     unselectedIconColor = p.faint, unselectedTextColor = p.faint,
                     indicatorColor = Color.Transparent,
                 )
-                NavigationBarItem(tab.intValue == 0, { tab.intValue = 0 }, { Icon(Icons.Default.Home, null) }, label = { Text("브리핑", fontSize = 12.sp) }, colors = colors)
-                NavigationBarItem(tab.intValue == 1, { tab.intValue = 1 }, { Icon(Icons.Default.DateRange, null) }, label = { Text("할 일", fontSize = 12.sp) }, colors = colors)
-                NavigationBarItem(tab.intValue == 2, { tab.intValue = 2 }, { Icon(Icons.Default.Settings, null) }, label = { Text("설정", fontSize = 12.sp) }, colors = colors)
+                NavigationBarItem(tab.intValue == 0, { tab.intValue = 0 }, { Icon(Icons.Default.Home, null) }, label = { Text(tr("브리핑", "Briefing"), fontSize = 12.sp) }, colors = colors)
+                NavigationBarItem(tab.intValue == 1, { tab.intValue = 1 }, { Icon(Icons.Default.DateRange, null) }, label = { Text(tr("할 일", "To-do"), fontSize = 12.sp) }, colors = colors)
+                NavigationBarItem(tab.intValue == 2, { tab.intValue = 2 }, { Icon(Icons.Default.Settings, null) }, label = { Text(tr("설정", "Settings"), fontSize = 12.sp) }, colors = colors)
             }
         },
     ) { pad ->
@@ -167,7 +173,7 @@ fun Header(kicker: String, title: String, syncing: Boolean, onRefresh: () -> Uni
             if (syncing) {
                 CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = p.accent)
             } else {
-                IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, contentDescription = "동기화", tint = p.sub) }
+                IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, contentDescription = tr("동기화", "Sync"), tint = p.sub) }
             }
         }
     }

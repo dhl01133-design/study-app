@@ -70,8 +70,8 @@ object Alarms {
                 "at:$at",
                 if (courses.size == 1) courses[0] else "",
                 if (ds.size == 1) ds[0].title
-                else "${ds.size}개 — " + ds.take(6).joinToString(", ") { (if (courses.size > 1 && it.course.isNotEmpty()) "[${it.course}] " else "") + it.title } +
-                    (if (ds.size > 6) " 외 ${ds.size - 6}개" else ""),
+                else tr("${ds.size}개 — ", "${ds.size} items — ") + ds.take(6).joinToString(", ") { (if (courses.size > 1 && it.course.isNotEmpty()) "[${it.course}] " else "") + it.title } +
+                    (if (ds.size > 6) tr(" 외 ${ds.size - 6}개", " +${ds.size - 6} more") else ""),
                 at,
             )
         }
@@ -111,9 +111,9 @@ object Notify {
 
     fun channels(ctx: Context) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
-        nm.createNotificationChannel(NotificationChannel(CH_BRIEF, "아침 브리핑", NotificationManager.IMPORTANCE_DEFAULT))
-        val ch = NotificationChannel(CH_DEADLINE, "마감 알람", NotificationManager.IMPORTANCE_HIGH).apply {
-            description = "마감 6시간·1시간 전 알람"
+        nm.createNotificationChannel(NotificationChannel(CH_BRIEF, tr("아침 브리핑", "Morning briefing"), NotificationManager.IMPORTANCE_DEFAULT))
+        val ch = NotificationChannel(CH_DEADLINE, tr("마감 알람", "Deadline alarms"), NotificationManager.IMPORTANCE_HIGH).apply {
+            description = tr("마감 6시간·1시간 전 알람", "Alarms 6 h and 1 h before deadlines")
             setSound(
                 RingtoneManager.getDefaultUri(RingtoneManager.TYPE_ALARM),
                 AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_ALARM)
@@ -143,7 +143,7 @@ object Notify {
         val text = Brief.summaryLines(s, p, today).joinToString("\n")
         val n = NotificationCompat.Builder(ctx, CH_BRIEF)
             .setSmallIcon(R.drawable.ic_notif)
-            .setContentTitle("☀️ ${Brief.dayLabel(today)} 브리핑")
+            .setContentTitle(tr("☀️ ${Brief.dayLabel(today)} 브리핑", "☀️ Briefing · ${Brief.dayLabel(today)}"))
             .setContentText(Brief.headline(s, p, today))
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(openApp(ctx, 0))
@@ -155,7 +155,7 @@ object Notify {
     @SuppressLint("MissingPermission")
     fun deadline(ctx: Context, id: Int, course: String, title: String, at: LocalDateTime, hours: Int) {
         if (!allowed(ctx)) return
-        val head = if (hours == 0) "⏰ 지금 마감" else "⏰ ${hours}시간 후 마감"
+        val head = if (hours == 0) tr("⏰ 지금 마감", "⏰ Due now") else tr("⏰ ${hours}시간 후 마감", "⏰ Due in ${hours} h")
         val body = (if (course.isNotEmpty()) "[$course] " else "") + title + " · " +
             Brief.dayLabel(at.toLocalDate()) + " " + Brief.hm(at.toLocalTime())
         val n = NotificationCompat.Builder(ctx, CH_DEADLINE)
