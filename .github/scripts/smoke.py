@@ -75,7 +75,7 @@ adb("shell", "pm", "grant", PKG, "android.permission.POST_NOTIFICATIONS", check=
 adb("logcat", "-c")
 
 # 1. Briefing
-start("--ez", "demo", "true", "--ei", "tab", "0")
+start("--ez", "demo", "true", "--es", "lang", "ko", "--ei", "tab", "0")
 time.sleep(2)
 shot("1_briefing_top")
 adb("shell", "input", "swipe", "540", "1800", "540", "700", "400")
