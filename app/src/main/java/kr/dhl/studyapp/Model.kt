@@ -103,8 +103,9 @@ data class Snapshot(
 object Courses {
     private val PREFIX = Regex("^\\[([^\\]]+)]\\s*")
 
-    fun prefix(s: String): String? = PREFIX.find(s)?.groupValues?.get(1)
-    fun strip(s: String): String = s.replaceFirst(PREFIX, "").ifBlank { s }
+    /** "[선형대수학] …" → 선형대수학, but only for real course names ("[과제2] …" stays part of the title). */
+    fun prefix(s: String): String? = PREFIX.find(s)?.groupValues?.get(1)?.takeIf { it in COLORS }
+    fun strip(s: String): String = if (prefix(s) != null) s.replaceFirst(PREFIX, "").ifBlank { s } else s
     fun fromProject(p: String): String = if (p.isBlank() || p == "Inbox") "" else p
 
     private val COLORS = mapOf(

@@ -24,7 +24,7 @@ def log(msg):
 
 
 def adb(*args, check=True):
-    r = subprocess.run(["adb", *args], capture_output=True, text=True)
+    r = subprocess.run(["adb", *args], capture_output=True, text=True, encoding="utf-8", errors="replace")
     if check and r.returncode != 0:
         log(f"adb {' '.join(args)} failed: {r.stderr.strip()}")
     return r.stdout
@@ -111,7 +111,7 @@ else:
         log(f"task now at y={moved[1][1]} (tomorrow header y={dy}; was y={sy})")
 
 # 3. Task dialog
-t = find(lambda t: t == "[과제2] M1의 소득유통속도와 이자율" or t.startswith("[과제2]"))
+t = find(lambda t: t.startswith("[과제2]"))
 if t:
     adb("shell", "input", "tap", str(t[1][0]), str(t[1][1]))
     time.sleep(1.5)
