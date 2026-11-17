@@ -1,0 +1,37 @@
+name: build apk
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # lets the job publish the "latest" release
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.11.1"
+      - name: Build APK
+        run: gradle assembleRelease --stacktrace
+      - run: cp app/build/outputs/apk/release/app-release.apk study-briefing.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: study-briefing
+          path: study-briefing.apk
+      - name: Publish as release "latest"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag || true
+          gh release create latest study-briefing.apk \
+            --title "스터디 브리핑 build ${{ github.run_number }}" \
+            --notes "Automatic build from ${{ github.sha }}"
