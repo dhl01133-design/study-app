@@ -212,8 +212,7 @@ fun TodoScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
                     1 -> tr("내일 · ", "Tomorrow · ")
                     else -> ""
                 }
-                val weekend = d.dayOfWeek.value >= 6
-                DaySection(k, prefix + Fmt.day(d), s.events.filter { it.occursOn(d) }, hovered == k, if (weekend) p.danger else p.text, onBounds) {
+                DaySection(k, prefix + Fmt.day(d), s.events.filter { it.occursOn(d) }, hovered == k, p.text, onBounds) {
                     tasks.filter { it.date == d }.sortedWith(byTime).forEach { key(it.id) { DraggableTask(it) } }
                 }
             }
