@@ -165,6 +165,21 @@ time.sleep(2)
 shot("5_notifications")
 adb("shell", "cmd", "statusbar", "collapse", check=False)
 
+# 5b. Home-screen widget: pin it, accept the launcher dialog, look at the home screen
+start("--ez", "pinWidget", "true")
+time.sleep(3)
+shot("8_widget_dialog")
+add = find(lambda t: t.lower().startswith("add"))
+if add:
+    adb("shell", "input", "tap", str(add[1][0]), str(add[1][1]))
+    log("widget: tapped '%s'" % add[0])
+else:
+    log("widget: no Add button found")
+time.sleep(3)
+adb("shell", "input", "keyevent", "KEYCODE_HOME")
+time.sleep(4)
+shot("8_widget_home")
+
 # 6. Alarms scheduled by the app
 alarms = adb("shell", "dumpsys", "alarm", check=False)
 lines = [l.strip() for l in alarms.splitlines() if PKG in l]

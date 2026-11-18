@@ -7,6 +7,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kr.dhl.studyapp.i18n.tr
 import kr.dhl.studyapp.notify.Alarms
+import kr.dhl.studyapp.widget.TodayWidget
 import java.io.File
 import java.time.LocalDate
 
@@ -48,6 +49,7 @@ class Repo(ctx: Context) {
                     if (Store.demo) return@withContext Store.snapshot.value  // demo switched on mid-sync
                     save(s)
                     Alarms.reschedule(app, s)
+                    TodayWidget.refresh(app)
                     s
                 } finally {
                     Store.syncing.value = false
@@ -112,8 +114,10 @@ class Repo(ctx: Context) {
         withContext(Dispatchers.IO) {
             val before = Store.snapshot.value
             save(local(before))
-            runCatching { if (!Store.demo) Todoist(prefs.todoistToken).remote() }
+            val result = runCatching { if (!Store.demo) Todoist(prefs.todoistToken).remote() }
                 .onSuccess { Alarms.reschedule(app, Store.snapshot.value) }
                 .onFailure { save(before) }
+            TodayWidget.refresh(app)
+            result
         }
 }

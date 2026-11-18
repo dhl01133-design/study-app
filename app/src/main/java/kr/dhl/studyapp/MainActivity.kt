@@ -1,6 +1,8 @@
 package kr.dhl.studyapp
 
 import android.Manifest
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
@@ -23,6 +25,7 @@ import kr.dhl.studyapp.notify.Notify
 import kr.dhl.studyapp.ui.AppRoot
 import kr.dhl.studyapp.ui.AppTheme
 import kr.dhl.studyapp.update.Updater
+import kr.dhl.studyapp.widget.TodayWidgetReceiver
 import java.time.LocalDateTime
 
 class MainActivity : ComponentActivity() {
@@ -73,6 +76,9 @@ class MainActivity : ComponentActivity() {
         }
         i.getStringExtra("theme")?.let { Store.theme.value = it }
         i.getStringExtra("lang")?.let { L.apply(it); Store.lang.value = it }
+        if (i.getBooleanExtra("pinWidget", false)) {
+            AppWidgetManager.getInstance(this).requestPinAppWidget(ComponentName(this, TodayWidgetReceiver::class.java), null, null)
+        }
         if (i.getBooleanExtra("demoNotify", false)) {
             Notify.briefing(this, Store.snapshot.value)
             Notify.deadline(this, 998, "선형대수학", "WeBWorK hw11 외 2개", LocalDateTime.now().plusHours(6), 6)

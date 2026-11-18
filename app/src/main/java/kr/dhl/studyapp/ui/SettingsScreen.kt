@@ -57,6 +57,7 @@ import kr.dhl.studyapp.i18n.tr
 import kr.dhl.studyapp.notify.Notify
 import kr.dhl.studyapp.update.UpdateState
 import kr.dhl.studyapp.update.Updater
+import kr.dhl.studyapp.widget.TodayWidget
 import java.time.LocalDateTime
 
 @SuppressLint("BatteryLife")
@@ -101,6 +102,7 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
         L.apply(mode)
         Notify.channels(ctx)  // rename the channels in Android settings
         Store.lang.value = mode
+        scope.launch { TodayWidget.refresh(ctx) }
     }
 
     fun setTheme(mode: String) {
