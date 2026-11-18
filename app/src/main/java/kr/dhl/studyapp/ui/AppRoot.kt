@@ -68,7 +68,7 @@ fun AppRoot(repo: Repo, tab: MutableIntState) {
                             Text(
                                 label, fontSize = 14.sp,
                                 fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-                                color = if (selected) p.text else p.faint,
+                                color = if (selected) p.accent else p.faint,
                             )
                         }
                     }

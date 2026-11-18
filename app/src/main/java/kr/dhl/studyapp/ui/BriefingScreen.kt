@@ -48,7 +48,7 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
         item {
             Row {
                 Stat("${todayLines.size}", tr("오늘", "Today"), Modifier.weight(1f))
-                Stat(Fmt.duration(slice.freeHours), tr("빈 시간", "Free"), Modifier.weight(1f))
+                Stat(Fmt.duration(slice.freeHours), tr("빈 시간", "Free"), Modifier.weight(1f), p.good)
                 Stat("${week.sumOf { it.second.size }}", tr("7일", "7 days"), Modifier.weight(1f))
                 Stat("${overdue.size}", tr("기한 지남", "Overdue"), Modifier.weight(1f), if (overdue.isNotEmpty()) p.danger else p.text)
             }
@@ -106,7 +106,7 @@ private fun FreeRow(start: Double, end: Double) {
     val p = pal
     Row(Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         Text("${Fmt.clock(start)} – ${Fmt.clock(end)}", fontSize = 15.sp, color = p.text, modifier = Modifier.weight(1f))
-        Text(Fmt.duration(end - start), fontSize = 15.sp, color = p.sub)
+        Text(Fmt.duration(end - start), fontSize = 15.sp, color = p.good)
     }
 }
 
@@ -118,7 +118,8 @@ private fun MarketRow(m: MarketItem) {
         Text(m.close?.let { "%,.2f".format(it) } ?: "–", fontSize = 15.sp, color = p.text)
         Text(
             m.pct?.let { "%+.2f%%".format(it) } ?: "",
-            fontSize = 15.sp, color = p.sub, textAlign = TextAlign.End, modifier = Modifier.width(76.dp),
+            fontSize = 15.sp, color = if ((m.pct ?: 0.0) >= 0) p.good else p.sub,
+            textAlign = TextAlign.End, modifier = Modifier.width(76.dp),
         )
     }
 }

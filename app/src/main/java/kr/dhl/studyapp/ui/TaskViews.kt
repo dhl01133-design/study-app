@@ -104,7 +104,11 @@ private fun EventRow(e: CalEvent) {
 }
 
 @Composable
-private fun priorityColor(priority: Int): Color = if (priority >= 3) pal.text else pal.faint
+private fun priorityColor(priority: Int): Color = when (priority) {
+    4 -> pal.warn      // p1
+    3 -> pal.accent    // p2
+    else -> pal.faint
+}
 
 /** A task: priority circle (tap to complete when [onCheck] is set), title, course, time and real deadline. */
 @Composable

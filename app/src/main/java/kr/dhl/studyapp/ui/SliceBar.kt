@@ -15,6 +15,7 @@ import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kr.dhl.studyapp.brief.BlockKind
 import kr.dhl.studyapp.brief.DaySlice
 import java.time.LocalTime
 import kotlin.math.max
@@ -22,7 +23,7 @@ import kotlin.math.max
 private const val FIRST_HOUR = 8.0
 private const val LAST_HOUR = 24.0
 
-/** 08–24: dark = busy, hatched = travel, outlined = free, thin line = now. */
+/** 08–24: blue = class, dark = other event, hatched = travel, green = free, blue line = now. */
 @Composable
 fun SliceBar(slice: DaySlice) {
     val p = pal
@@ -46,8 +47,8 @@ fun SliceBar(slice: DaySlice) {
         }
 
         for ((a, b) in slice.free) {
-            drawRoundRect(p.bg, Offset(x(a) + 1f, 1f), Size(max(x(b) - x(a) - 2f, 1f), h - 2f), r)
-            drawRoundRect(p.faint, Offset(x(a) + 1f, 1f), Size(max(x(b) - x(a) - 2f, 1f), h - 2f), r, style = Stroke(1.dp.toPx()))
+            drawRoundRect(p.goodSoft, Offset(x(a) + 1f, 1f), Size(max(x(b) - x(a) - 2f, 1f), h - 2f), r)
+            drawRoundRect(p.good, Offset(x(a) + 1f, 1f), Size(max(x(b) - x(a) - 2f, 1f), h - 2f), r, style = Stroke(1.dp.toPx()))
         }
 
         val paint = Paint().apply { isAntiAlias = true; textSize = 10.sp.toPx(); color = p.onBusy.toArgb() }
@@ -55,7 +56,7 @@ fun SliceBar(slice: DaySlice) {
             if (b.end <= FIRST_HOUR) continue
             val left = x(b.start)
             val width = x(b.end) - left
-            drawRoundRect(p.busy, Offset(left, 0f), Size(max(width, 1f), h), r)
+            drawRoundRect(if (b.kind == BlockKind.CLASS) p.accent else p.busy, Offset(left, 0f), Size(max(width, 1f), h), r)
             if (width > 24.dp.toPx()) {
                 val n = paint.breakText(b.title, true, width - 8.dp.toPx(), null)
                 drawContext.canvas.nativeCanvas.drawText(b.title.take(max(n, 1)), left + 4.dp.toPx(), h / 2 + 4.dp.toPx(), paint)
@@ -64,7 +65,7 @@ fun SliceBar(slice: DaySlice) {
 
         val now = LocalTime.now().let { it.hour + it.minute / 60.0 }
         if (now in FIRST_HOUR..LAST_HOUR) {
-            drawLine(p.danger, Offset(x(now), -2f), Offset(x(now), h + 2f), strokeWidth = 1.5.dp.toPx())
+            drawLine(p.accent, Offset(x(now), -4f), Offset(x(now), h + 4f), strokeWidth = 2.dp.toPx())
         }
 
         paint.apply { color = p.faint.toArgb(); textAlign = Paint.Align.CENTER }

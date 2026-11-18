@@ -22,7 +22,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.graphics.lerp
 import kr.dhl.studyapp.brief.Line
+import kr.dhl.studyapp.data.Courses
 import kr.dhl.studyapp.i18n.tr
 
 /** Page title with a plain-text sync action. */
@@ -77,11 +79,15 @@ fun LineRow(l: Line) {
     }
 }
 
-/** Course name in small gray text. */
+/** Course name in small text, in the course's own color. */
 @Composable
 fun CourseChip(course: String) {
     if (course.isEmpty()) return
-    Text(course, color = pal.sub, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    val base = Color(Courses.color(course))
+    Text(
+        course, color = if (pal.dark) lerp(base, Color.White, 0.4f) else base,
+        fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+    )
 }
 
 /** Outlined option button; filled when [selected]. */
