@@ -22,6 +22,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
@@ -185,6 +186,15 @@ fun TodoScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
     val hovered = if (dragging != null) hoverKey() else null
     val onBounds: (String, Rect) -> Unit = { k, r -> targets[k] = r }
 
+    // Forget drop targets that are no longer on screen (e.g. yesterday, after midnight).
+    val pastShown = tasks.any { Drop.of(it) == Drop.PAST }
+    val shownKeys = buildSet {
+        if (pastShown) add(Drop.PAST)
+        for (n in 0 until DAYS_SHOWN) add(Drop.day(today.plusDays(n.toLong())))
+        add(Drop.NO_DATE)
+    }
+    SideEffect { targets.keys.retainAll(shownKeys) }
+
     Box(
         Modifier.fillMaxSize().onGloballyPositioned {
             rootPos = it.positionInRoot()
@@ -202,7 +212,7 @@ fun TodoScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
                 DaySection(Drop.PAST, tr("지난 날짜", "Past dates"), null, false, p.danger, onBounds) {
                     past.forEach { key(it.id) { DraggableTask(it) } }
                 }
-            } else targets.remove(Drop.PAST)
+            }
 
             for (n in 0 until DAYS_SHOWN) {
                 val d = today.plusDays(n.toLong())

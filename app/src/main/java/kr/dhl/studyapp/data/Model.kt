@@ -42,11 +42,10 @@ data class TaskItem(
             val (month, day, hour, minute) = m.destructured
             val t = if (hour.isNotEmpty()) LocalTime.of(hour.toInt() % 24, minute.toInt()) else END_OF_DAY
             val base = date ?: LocalDate.now()
-            return runCatching {
-                var d = LocalDate.of(base.year, month.toInt(), day.toInt())
-                if (d.isBefore(base.minusMonths(6))) d = d.plusYears(1)
-                d.atTime(t)
-            }.getOrDefault(planned)
+            val closest = (base.year - 1..base.year + 1)
+                .mapNotNull { y -> runCatching { LocalDate.of(y, month.toInt(), day.toInt()) }.getOrNull() }
+                .minByOrNull { kotlin.math.abs(java.time.temporal.ChronoUnit.DAYS.between(base, it)) }
+            return closest?.atTime(t) ?: planned
         }
 
     /** True when the planned day differs from the real deadline. */
@@ -72,7 +71,6 @@ data class CalEvent(
     val title: String get() = Courses.strip(summary)
     val isClass: Boolean get() = CLASS_RE.containsMatchIn(summary)
     val isDeadline: Boolean get() = !isClass && DEADLINE_RE.containsMatchIn(summary)
-    val isJob: Boolean get() = "알바" in summary
 
     /** When a deadline event is due: its start, or 23:59 for an all-day event. */
     val dueAt: LocalDateTime get() = if (allDay) startAt.toLocalDate().atTime(END_OF_DAY) else startAt
@@ -90,7 +88,7 @@ data class CalEvent(
 
     companion object {
         private val CLASS_RE = Regex("수업\\s*$|출석")
-        private val DEADLINE_RE = Regex("마감|due|제출|deadline", RegexOption.IGNORE_CASE)
+        private val DEADLINE_RE = Regex("마감|제출|\\bdue\\b|\\bdeadline\\b", RegexOption.IGNORE_CASE)
     }
 }
 

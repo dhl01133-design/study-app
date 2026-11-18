@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
             Store.demo = true
             Store.snapshot.value = Demo.snapshot()
         }
+        if (!Store.demo) return
         i.getStringExtra("theme")?.let { Store.theme.value = it }
         i.getStringExtra("lang")?.let { L.apply(it); Store.lang.value = it }
         if (i.getBooleanExtra("pinWidget", false)) {

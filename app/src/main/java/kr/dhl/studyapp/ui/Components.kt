@@ -44,7 +44,7 @@ fun Header(title: String, syncing: Boolean, onRefresh: () -> Unit) {
 
 /** Section with a small gray title and no background. */
 @Composable
-fun SoftCard(
+fun Section(
     title: String? = null,
     titleColor: Color = pal.sub,
     trailing: String? = null,
@@ -74,14 +74,14 @@ fun LineRow(l: Line) {
         Text(l.time, fontSize = 14.sp, color = p.sub, modifier = Modifier.width(92.dp))
         Column(Modifier.weight(1f)) {
             Text(l.title, fontSize = 15.sp, color = p.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            CourseChip(l.course)
+            CourseLabel(l.course)
         }
     }
 }
 
 /** Course name in small text, in the course's own color. */
 @Composable
-fun CourseChip(course: String) {
+fun CourseLabel(course: String) {
     if (course.isEmpty()) return
     val base = Color(Courses.color(course))
     Text(

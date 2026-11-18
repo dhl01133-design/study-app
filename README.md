@@ -10,7 +10,9 @@ Personal app that replaces the KakaoTalk briefing and deadline alarms. The cloud
 | `data` | `Model`, `Courses`, `Prefs`, `Store`, `Repo`, `Http`, `Todoist`, `Markets`, `Ics`, `Demo` | Tasks/events/markets, settings, in-memory state, sync and optimistic Todoist edits, iCal parsing, demo data |
 | `brief` | `Fmt`, `DaySlice`, `Brief` | Date formatting, the day's free-time slice, briefing contents and deadline list |
 | `notify` | `Alarms`, `Notify`, `Receivers`, `SyncWorker` | AlarmManager scheduling, notifications, alarm/boot receivers, 3-hourly sync |
-| `ui` | `Theme`, `Components`, `AppRoot`, `BriefingScreen`, `SliceBar`, `TodoScreen`, `TaskViews`, `SettingsScreen` | Compose screens |
+| `update` | `Updater`, `InstallReceiver` | In-app updates from the private repo's `latest` release |
+| `widget` | `TodayWidget`, `SliceBitmap` | Home-screen widget (Glance) with today's time bar and list |
+| `ui` | `Theme`, `Components`, `AppRoot`, `BriefingScreen`, `SliceBar`, `TodoScreen`, `TaskViews`, `UpdateViews`, `SettingsScreen` | Compose screens |
 | `i18n` | `Lang` | 한국어 / English (`tr(ko, en)`) |
 
 `TaskItem.planned` is the Todoist date (the day you plan to work on it); `TaskItem.deadline` is the real deadline, taken from "Due M/D [HH:MM]" in the description when present.

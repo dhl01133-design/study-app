@@ -57,28 +57,28 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
             Column { s.errors.forEach { Text(it, fontSize = 13.sp, color = p.danger, modifier = Modifier.padding(vertical = 2.dp)) } }
         }
         if (overdue.isNotEmpty()) item {
-            SoftCard(tr("기한 지남", "Overdue"), titleColor = p.danger) { overdue.forEach { LineRow(it) } }
+            Section(tr("기한 지남", "Overdue"), titleColor = p.danger) { overdue.forEach { LineRow(it) } }
         }
         item {
-            SoftCard(tr("시간", "Time")) {
+            Section(tr("시간", "Time")) {
                 SliceBar(slice)
                 if (slice.free.isEmpty()) Text(tr("빈 시간 없음", "No free time"), color = p.sub, fontSize = 14.sp)
                 slice.free.forEach { (start, end) -> FreeRow(start, end) }
             }
         }
         item {
-            SoftCard(tr("오늘", "Today")) {
+            Section(tr("오늘", "Today")) {
                 if (todayLines.isEmpty()) Text(tr("없음", "Nothing"), color = p.sub, fontSize = 14.sp)
                 todayLines.forEach { LineRow(it) }
             }
         }
         if (s.markets.isNotEmpty()) item {
-            SoftCard(tr("미국장", "Markets"), trailing = s.marketSession) {
+            Section(tr("미국장", "Markets"), trailing = s.marketSession) {
                 s.markets.forEach { MarketRow(it) }
             }
         }
         item {
-            SoftCard(tr("다음 7일", "Next 7 days")) {
+            Section(tr("다음 7일", "Next 7 days")) {
                 if (week.isEmpty()) Text(tr("없음", "Nothing"), color = p.sub, fontSize = 14.sp)
                 week.forEachIndexed { i, (label, lines) ->
                     Text(

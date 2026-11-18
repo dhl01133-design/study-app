@@ -101,23 +101,37 @@ class Repo(ctx: Context) {
 
     /** Moves a task to another day (null = no date), keeping its time. */
     suspend fun moveTask(t: TaskItem, date: LocalDate?): Result<Unit> = optimistic(
-        { it.updateTask(t.id) { task -> task.copy(dueDate = date?.toString(), dueTime = if (date == null) null else task.dueTime) } },
-        { setDue(t.id, date, if (date == null) null else t.time) },
+        apply = { it.updateTask(t.id) { task -> task.copy(dueDate = date?.toString(), dueTime = if (date == null) null else task.dueTime) } },
+        revert = { it.updateTask(t.id) { t } },
+        remote = { setDue(t.id, date, if (date == null) null else t.time) },
     )
 
-    suspend fun complete(t: TaskItem): Result<Unit> = optimistic({ it.removeTask(t.id) }, { close(t.id) })
+    suspend fun complete(t: TaskItem): Result<Unit> = optimistic(
+        apply = { it.removeTask(t.id) },
+        revert = { if (it.tasks.any { x -> x.id == t.id }) it else it.addTask(t) },
+        remote = { close(t.id) },
+    )
 
-    suspend fun reopen(t: TaskItem): Result<Unit> = optimistic({ it.addTask(t) }, { reopen(t.id) })
+    suspend fun reopen(t: TaskItem): Result<Unit> = optimistic(
+        apply = { if (it.tasks.any { x -> x.id == t.id }) it else it.addTask(t) },
+        revert = { it.removeTask(t.id) },
+        remote = { reopen(t.id) },
+    )
 
-    /** Applies [local] at once so the UI updates, then sends [remote]; reverts if Todoist rejects it. */
-    private suspend fun optimistic(local: (Snapshot) -> Snapshot, remote: Todoist.() -> Unit): Result<Unit> =
-        withContext(Dispatchers.IO) {
-            val before = Store.snapshot.value
-            save(local(before))
-            val result = runCatching { if (!Store.demo) Todoist(prefs.todoistToken).remote() }
-                .onSuccess { Alarms.reschedule(app, Store.snapshot.value) }
-                .onFailure { save(before) }
-            TodayWidget.refresh(app)
-            result
-        }
+    /**
+     * Applies the change at once so the UI updates, then sends it to Todoist.
+     * If Todoist rejects it, only this task is put back, so a sync that finished meanwhile is kept.
+     */
+    private suspend fun optimistic(
+        apply: (Snapshot) -> Snapshot,
+        revert: (Snapshot) -> Snapshot,
+        remote: Todoist.() -> Unit,
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        save(apply(Store.snapshot.value))
+        val result = runCatching { if (!Store.demo) Todoist(prefs.todoistToken).remote() }
+            .onFailure { save(revert(Store.snapshot.value)) }
+        Alarms.reschedule(app, Store.snapshot.value)
+        TodayWidget.refresh(app)
+        result
+    }
 }

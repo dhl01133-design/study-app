@@ -100,7 +100,8 @@ class TodayWidget : GlanceAppWidget() {
 
     @Composable
     private fun LineItem(l: Line) {
-        Row(GlanceModifier.fillMaxWidth().padding(vertical = 3.dp)) {
+        // List rows don't pass taps to the widget's background, so each row opens the app too.
+        Row(GlanceModifier.fillMaxWidth().padding(vertical = 3.dp).clickable(actionStartActivity<MainActivity>())) {
             Text(l.time, style = TextStyle(color = SUB, fontSize = 12.sp), modifier = GlanceModifier.width(84.dp))
             Column(GlanceModifier.defaultWeight()) {
                 Text(l.title, style = TextStyle(color = TEXT, fontSize = 13.sp), maxLines = 1)

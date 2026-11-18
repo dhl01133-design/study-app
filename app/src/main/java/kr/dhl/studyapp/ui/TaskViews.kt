@@ -125,7 +125,7 @@ fun TaskCard(t: TaskItem, onCheck: (() -> Unit)?) {
         Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
             Text(t.title, fontSize = 15.sp, color = p.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            CourseChip(t.course)
+            CourseLabel(t.course)
         }
         Column(horizontalAlignment = Alignment.End) {
             t.dueTime?.let { Text(it, fontSize = 13.sp, color = p.sub) }
@@ -152,7 +152,7 @@ fun TaskDialog(
         title = { Text(t.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = p.text) },
         text = {
             Column {
-                CourseChip(t.course)
+                CourseLabel(t.course)
                 Spacer(Modifier.height(10.dp))
                 Text(
                     t.date?.let { Fmt.day(it) + (t.dueTime?.let { time -> " $time" } ?: "") } ?: tr("없음", "none"),

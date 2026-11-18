@@ -9,7 +9,7 @@ import kotlin.math.min
 /** A span of hours within a day, e.g. 9.0 to 10.25. */
 typealias Span = Pair<Double, Double>
 
-enum class BlockKind { CLASS, JOB, OTHER }
+enum class BlockKind { CLASS, OTHER }
 
 /** One timed event on the day, in hours since midnight. */
 data class Block(
@@ -48,11 +48,7 @@ data class DaySlice(val blocks: List<Block>, val travel: List<Span>, val free: L
                         start = if (fromYesterday) 0.0 else hours(e.startAt.toLocalTime()),
                         end = if (intoTomorrow || e.endAt == dayEnd) 24.0 else hours(e.endAt.toLocalTime()),
                         title = e.title,
-                        kind = when {
-                            e.isClass -> BlockKind.CLASS
-                            e.isJob -> BlockKind.JOB
-                            else -> BlockKind.OTHER
-                        },
+                        kind = if (e.isClass) BlockKind.CLASS else BlockKind.OTHER,
                         fromYesterday = fromYesterday,
                         intoTomorrow = intoTomorrow,
                     )
