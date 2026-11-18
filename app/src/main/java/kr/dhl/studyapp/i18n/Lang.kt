@@ -2,9 +2,9 @@ package kr.dhl.studyapp.i18n
 
 import java.util.Locale
 
-/** App language: "system" (Korean phones → 한국어, anything else → English), "ko" or "en". */
+/** App language: "en" (default), "ko", or "system" (Korean phones → 한국어, anything else → English). */
 object L {
-    @Volatile var en = false
+    @Volatile var en = true
         private set
 
     fun apply(mode: String) {

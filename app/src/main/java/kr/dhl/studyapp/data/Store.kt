@@ -8,7 +8,7 @@ object Store {
     val snapshot = MutableStateFlow(Snapshot())
     val syncing = MutableStateFlow(false)
     val theme = MutableStateFlow("system")
-    val lang = MutableStateFlow("system")
+    val lang = MutableStateFlow("en")
     val syncLock = Mutex()
 
     /** Emulator smoke test: show [Demo] data, never sync, save or call Todoist. */

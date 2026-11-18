@@ -16,7 +16,7 @@ class Prefs(ctx: Context) {
     var briefingText by string("brief", "08:17", clean = { it.trim() })
     var offsetsText by string("offsets", "6,1", clean = { it.trim() })
     var themeMode by string("theme", "system")                 // system | light | dark
-    var langMode by string("lang", "system")                   // system | ko | en
+    var langMode by string("lang", "en")                       // en (default) | ko | system
     var onlyIcampus by boolean("only_icampus", false)
 
     var alarmCodes: Set<String>

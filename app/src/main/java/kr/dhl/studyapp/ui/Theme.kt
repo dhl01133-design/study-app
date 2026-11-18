@@ -16,43 +16,36 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 
-/** Clean & minimal palette: white/near-black pages, soft borderless cards, one blue accent. */
+/**
+ * Minimal monochrome palette. Black/white text with grays; red only for deadlines and overdue items.
+ * Day slice: dark = busy, hatched gray = travel, outlined = free.
+ */
 @Immutable
 data class Pal(
     val dark: Boolean,
-    val bg: Color, val card: Color, val tile: Color,
-    val text: Color, val sub: Color, val faint: Color,
-    val accent: Color, val accentSoft: Color,
-    val danger: Color, val dangerSoft: Color,
-    val up: Color, val down: Color, val divider: Color,
-    val cls: Color, val clsInk: Color, val job: Color, val jobInk: Color, val ev: Color, val evInk: Color,
-    val travel: Color, val travelLine: Color, val free: Color, val freeLine: Color, val freeInk: Color,
+    val bg: Color, val surface: Color,
+    val text: Color, val sub: Color, val faint: Color, val line: Color,
+    val accent: Color, val onAccent: Color, val accentSoft: Color,
+    val danger: Color,
+    val busy: Color, val onBusy: Color, val track: Color, val hatch: Color,
 )
 
 val LightPal = Pal(
     dark = false,
-    bg = Color(0xFFFFFFFF), card = Color(0xFFF4F5F7), tile = Color(0xFFFFFFFF),
-    text = Color(0xFF191F28), sub = Color(0xFF6B7684), faint = Color(0xFFB0B8C1),
-    accent = Color(0xFF3182F6), accentSoft = Color(0xFFE8F3FF),
-    danger = Color(0xFFF04452), dangerSoft = Color(0xFFFFEEEF),
-    up = Color(0xFFF04452), down = Color(0xFF3182F6), divider = Color(0xFFE5E8EB),
-    cls = Color(0xFFE3EEFF), clsInk = Color(0xFF1B64DA), job = Color(0xFFFFEDE0), jobInk = Color(0xFFC2410C),
-    ev = Color(0xFFE9ECF0), evInk = Color(0xFF4E5968),
-    travel = Color(0xFFF2F4F6), travelLine = Color(0xFFD1D6DB),
-    free = Color(0xFFE5F7EE), freeLine = Color(0xFF4CC38A), freeInk = Color(0xFF0F7B4A),
+    bg = Color(0xFFFFFFFF), surface = Color(0xFFFFFFFF),
+    text = Color(0xFF111111), sub = Color(0xFF6E6E73), faint = Color(0xFFB4B4B9), line = Color(0xFFECECEE),
+    accent = Color(0xFF111111), onAccent = Color(0xFFFFFFFF), accentSoft = Color(0xFFF3F3F5),
+    danger = Color(0xFFE5484D),
+    busy = Color(0xFF2B2B2E), onBusy = Color(0xFFFFFFFF), track = Color(0xFFF3F3F5), hatch = Color(0xFFD9D9DD),
 )
 
 val DarkPal = Pal(
     dark = true,
-    bg = Color(0xFF101114), card = Color(0xFF1C1E22), tile = Color(0xFF26292E),
-    text = Color(0xFFF2F4F6), sub = Color(0xFF9BA3AE), faint = Color(0xFF5D646E),
-    accent = Color(0xFF4C9AFF), accentSoft = Color(0xFF1B2B44),
-    danger = Color(0xFFFF5C69), dangerSoft = Color(0xFF3A1E22),
-    up = Color(0xFFFF5C69), down = Color(0xFF4C9AFF), divider = Color(0xFF2C2F35),
-    cls = Color(0xFF1E2E4A), clsInk = Color(0xFF8DBBFF), job = Color(0xFF3A2A1E), jobInk = Color(0xFFFFB37A),
-    ev = Color(0xFF2A2D33), evInk = Color(0xFFC3C9D1),
-    travel = Color(0xFF202328), travelLine = Color(0xFF3A3E45),
-    free = Color(0xFF16332A), freeLine = Color(0xFF3FB27F), freeInk = Color(0xFF7EE0B0),
+    bg = Color(0xFF0E0E10), surface = Color(0xFF1A1A1D),
+    text = Color(0xFFF2F2F2), sub = Color(0xFF9A9AA0), faint = Color(0xFF55555A), line = Color(0xFF242428),
+    accent = Color(0xFFF2F2F2), onAccent = Color(0xFF0E0E10), accentSoft = Color(0xFF1C1C20),
+    danger = Color(0xFFFF6369),
+    busy = Color(0xFFD6D6DA), onBusy = Color(0xFF0E0E10), track = Color(0xFF1C1C20), hatch = Color(0xFF3A3A3F),
 )
 
 val LocalPal = staticCompositionLocalOf { LightPal }
@@ -75,22 +68,14 @@ fun AppTheme(mode: String, content: @Composable () -> Unit) {
         val style = if (dark) SystemBarStyle.dark(t) else SystemBarStyle.light(t, t)
         activity?.enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
     }
-    val scheme = if (dark) darkColorScheme(
-        primary = p.accent, onPrimary = Color.White, primaryContainer = p.accentSoft, onPrimaryContainer = p.accent,
-        secondaryContainer = p.accentSoft, onSecondaryContainer = p.accent,
+    val scheme = (if (dark) darkColorScheme() else lightColorScheme()).copy(
+        primary = p.accent, onPrimary = p.onAccent, primaryContainer = p.accentSoft, onPrimaryContainer = p.text,
+        secondaryContainer = p.accentSoft, onSecondaryContainer = p.text,
         background = p.bg, onBackground = p.text, surface = p.bg, onSurface = p.text,
-        surfaceVariant = p.card, onSurfaceVariant = p.sub, outline = p.faint, outlineVariant = p.divider,
-        error = p.danger, surfaceContainer = p.bg, surfaceContainerLow = p.card,
-        surfaceContainerHigh = p.card, surfaceContainerHighest = p.tile, inverseSurface = p.text, inverseOnSurface = p.bg,
-        inversePrimary = p.accent,
-    ) else lightColorScheme(
-        primary = p.accent, onPrimary = Color.White, primaryContainer = p.accentSoft, onPrimaryContainer = p.accent,
-        secondaryContainer = p.accentSoft, onSecondaryContainer = p.accent,
-        background = p.bg, onBackground = p.text, surface = p.bg, onSurface = p.text,
-        surfaceVariant = p.card, onSurfaceVariant = p.sub, outline = p.faint, outlineVariant = p.divider,
-        error = p.danger, surfaceContainer = p.bg, surfaceContainerLow = p.card,
-        surfaceContainerHigh = Color.White, surfaceContainerHighest = Color(0xFFE5E8EB), inverseSurface = p.text,
-        inverseOnSurface = p.bg, inversePrimary = Color(0xFF90C2FF),
+        surfaceVariant = p.accentSoft, onSurfaceVariant = p.sub, outline = p.faint, outlineVariant = p.line,
+        error = p.danger, surfaceContainer = p.bg, surfaceContainerLow = p.bg,
+        surfaceContainerHigh = p.surface, surfaceContainerHighest = p.line,
+        inverseSurface = p.text, inverseOnSurface = p.bg, inversePrimary = p.faint,
     )
     CompositionLocalProvider(LocalPal provides p) {
         MaterialTheme(colorScheme = scheme, content = content)

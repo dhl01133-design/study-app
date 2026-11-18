@@ -1,19 +1,15 @@
 package kr.dhl.studyapp.ui
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.RowScope
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.DateRange
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemColors
-import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Snackbar
 import androidx.compose.material3.SnackbarHost
@@ -25,9 +21,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -36,7 +32,7 @@ import kr.dhl.studyapp.data.Repo
 import kr.dhl.studyapp.data.Store
 import kr.dhl.studyapp.i18n.tr
 
-/** Bottom navigation with the three tabs. */
+/** Three tabs with a text-only bar at the bottom. */
 @Composable
 fun AppRoot(repo: Repo, tab: MutableIntState) {
     val p = pal
@@ -47,32 +43,36 @@ fun AppRoot(repo: Repo, tab: MutableIntState) {
     val refresh: () -> Unit = { scope.launch { runCatching { repo.sync() } } }
 
     val tabs = listOf(
-        Triple(MainActivity.TAB_BRIEFING, Icons.Default.Home, tr("브리핑", "Briefing")),
-        Triple(MainActivity.TAB_TODO, Icons.Default.DateRange, tr("할 일", "To-do")),
-        Triple(MainActivity.TAB_SETTINGS, Icons.Default.Settings, tr("설정", "Settings")),
+        MainActivity.TAB_BRIEFING to tr("브리핑", "Briefing"),
+        MainActivity.TAB_TODO to tr("할 일", "To-do"),
+        MainActivity.TAB_SETTINGS to tr("설정", "Settings"),
     )
 
     Scaffold(
         containerColor = p.bg,
         snackbarHost = {
             SnackbarHost(snackbar) { data ->
-                Snackbar(
-                    data,
-                    shape = RoundedCornerShape(14.dp),
-                    containerColor = if (p.dark) p.tile else Color(0xFF333D4B),
-                    contentColor = Color.White,
-                    actionColor = Color(0xFF90C2FF),
-                )
+                Snackbar(data, shape = RoundedCornerShape(10.dp), containerColor = p.text, contentColor = p.bg, actionColor = p.bg)
             }
         },
         bottomBar = {
-            NavigationBar(containerColor = p.bg, tonalElevation = 0.dp) {
-                val colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = p.text, selectedTextColor = p.text,
-                    unselectedIconColor = p.faint, unselectedTextColor = p.faint,
-                    indicatorColor = Color.Transparent,
-                )
-                tabs.forEach { (index, icon, label) -> TabItem(tab, index, icon, label, colors) }
+            Column(Modifier.background(p.bg).navigationBarsPadding()) {
+                Rule()
+                Row(Modifier.fillMaxWidth()) {
+                    tabs.forEach { (index, label) ->
+                        val selected = tab.intValue == index
+                        Box(
+                            Modifier.weight(1f).clickable { tab.intValue = index }.padding(vertical = 14.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                label, fontSize = 14.sp,
+                                fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (selected) p.text else p.faint,
+                            )
+                        }
+                    }
+                }
             }
         },
     ) { pad ->
@@ -84,21 +84,4 @@ fun AppRoot(repo: Repo, tab: MutableIntState) {
             }
         }
     }
-}
-
-@Composable
-private fun RowScope.TabItem(
-    tab: MutableIntState,
-    index: Int,
-    icon: ImageVector,
-    label: String,
-    colors: NavigationBarItemColors,
-) {
-    NavigationBarItem(
-        selected = tab.intValue == index,
-        onClick = { tab.intValue = index },
-        icon = { Icon(icon, null) },
-        label = { Text(label, fontSize = 12.sp) },
-        colors = colors,
-    )
 }

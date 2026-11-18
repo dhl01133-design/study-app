@@ -1,5 +1,6 @@
 package kr.dhl.studyapp.ui
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.scrollBy
@@ -192,7 +193,7 @@ fun TodoScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
     ) {
         Column(
             Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 20.dp, vertical = 12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             Header(tr("할 일", "To-do"), syncing, onRefresh)
 
@@ -229,7 +230,8 @@ fun TodoScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
                 Modifier
                     .offset { IntOffset((pointer.x - rootPos.x - grab.x).roundToInt(), (pointer.y - rootPos.y - grab.y).roundToInt()) }
                     .width(with(density) { dragWidth.toDp() })
-                    .shadow(16.dp, RoundedCornerShape(16.dp)),
+                    .shadow(8.dp, RoundedCornerShape(10.dp))
+                    .background(p.surface),
             ) { TaskCard(t, onCheck = null) }
         }
     }

@@ -56,7 +56,7 @@ object Notify {
         post(
             ctx, BRIEF_ID,
             NotificationCompat.Builder(ctx, CH_BRIEF)
-                .setContentTitle(tr("☀️ ${Fmt.day(today)} 브리핑", "☀️ Briefing · ${Fmt.day(today)}"))
+                .setContentTitle(Fmt.day(today))
                 .setContentText(Brief.headline(s, prefs, today))
                 .setStyle(NotificationCompat.BigTextStyle().bigText(Brief.summary(s, prefs, today).joinToString("\n")))
                 .setContentIntent(openApp(ctx, MainActivity.TAB_BRIEFING)),
@@ -64,7 +64,7 @@ object Notify {
     }
 
     fun deadline(ctx: Context, id: Int, course: String, title: String, at: LocalDateTime, hours: Int) {
-        val head = if (hours == 0) tr("⏰ 지금 마감", "⏰ Due now") else tr("⏰ ${hours}시간 후 마감", "⏰ Due in $hours h")
+        val head = if (hours == 0) tr("지금 마감", "Due now") else tr("${hours}시간 후 마감", "Due in $hours h")
         val body = Brief.withCourse(course, title) + " · " + Fmt.day(at.toLocalDate()) + " " + Fmt.time(at.toLocalTime())
         post(
             ctx, id,

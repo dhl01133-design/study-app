@@ -57,20 +57,19 @@ fun DaySection(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val p = pal
-    val shape = RoundedCornerShape(22.dp)
+    val shape = RoundedCornerShape(10.dp)
     Column(
         Modifier
             .fillMaxWidth()
             .onGloballyPositioned { onBounds(key, it.boundsInRoot()) }
             .clip(shape)
-            .background(if (highlight) p.accentSoft else p.card)
-            .then(if (highlight) Modifier.border(2.dp, p.accent, shape) else Modifier)
-            .padding(14.dp)
-            .defaultMinSize(minHeight = 44.dp)
+            .then(if (highlight) Modifier.background(p.accentSoft).border(1.dp, p.accent, shape) else Modifier)
+            .padding(vertical = 8.dp, horizontal = 4.dp)
+            .defaultMinSize(minHeight = 40.dp)
             .animateContentSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(title, fontWeight = FontWeight.Bold, fontSize = 16.sp, color = titleColor, modifier = Modifier.padding(start = 4.dp))
+        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = titleColor, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
         events.orEmpty().let { evs ->
             val classes = evs.filter { it.isClass && !it.allDay }
             if (classes.isNotEmpty()) {
@@ -98,52 +97,35 @@ private fun EventRow(e: CalEvent) {
                 e.isDeadline -> "~" + Fmt.time(e.startAt.toLocalTime())
                 else -> Fmt.time(e.startAt.toLocalTime())
             },
-            fontSize = 12.sp, color = p.sub, modifier = Modifier.width(46.dp),
+            fontSize = 12.sp, color = if (e.isDeadline) p.danger else p.sub, modifier = Modifier.width(50.dp),
         )
-        Box(Modifier.size(6.dp).clip(CircleShape).background(if (e.isDeadline) p.danger else p.faint))
-        Text("  " + e.title, fontSize = 13.sp, color = p.sub, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        Text(e.title, fontSize = 13.sp, color = p.sub, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun priorityColor(priority: Int): Color {
-    val p = pal
-    return when (priority) {
-        4 -> p.danger
-        3 -> Color(0xFFFF9F0A)
-        2 -> p.accent
-        else -> p.faint
-    }
-}
+private fun priorityColor(priority: Int): Color = if (priority >= 3) pal.text else pal.faint
 
 /** A task: priority circle (tap to complete when [onCheck] is set), title, course, time and real deadline. */
 @Composable
 fun TaskCard(t: TaskItem, onCheck: (() -> Unit)?) {
     val p = pal
     Row(
-        Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.tile).padding(horizontal = 14.dp, vertical = 13.dp),
+        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
-            Modifier.size(24.dp).clip(CircleShape).border(2.dp, priorityColor(t.priority), CircleShape)
+            Modifier.size(20.dp).clip(CircleShape).border(1.5.dp, priorityColor(t.priority), CircleShape)
                 .then(if (onCheck != null) Modifier.clickable { onCheck() } else Modifier),
         )
-        Spacer(Modifier.width(12.dp))
+        Spacer(Modifier.width(14.dp))
         Column(Modifier.weight(1f)) {
-            Text(t.title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = p.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
-            if (t.course.isNotEmpty() || t.recurring) {
-                Spacer(Modifier.height(4.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    CourseChip(t.course)
-                    if (t.recurring) Text(" ↻", fontSize = 12.sp, color = p.sub)
-                }
-            }
+            Text(t.title, fontSize = 15.sp, color = p.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            CourseChip(t.course)
         }
         Column(horizontalAlignment = Alignment.End) {
-            t.dueTime?.let { Text(it, fontSize = 13.sp, color = p.sub, fontWeight = FontWeight.Medium) }
-            if (t.isPlanned) t.deadline?.let {
-                Text(tr("마감 ", "Due ") + Fmt.md(it.toLocalDate()), fontSize = 11.sp, color = p.danger, fontWeight = FontWeight.SemiBold)
-            }
+            t.dueTime?.let { Text(it, fontSize = 13.sp, color = p.sub) }
+            if (t.isPlanned) t.deadline?.let { Text(tr("마감 ", "Due ") + Fmt.md(it.toLocalDate()), fontSize = 12.sp, color = p.danger) }
         }
     }
 }
@@ -161,9 +143,9 @@ fun TaskDialog(
     val today = LocalDate.now()
     AlertDialog(
         onDismissRequest = onDismiss,
-        containerColor = if (p.dark) p.card else Color.White,
-        shape = RoundedCornerShape(24.dp),
-        title = { Text(t.title, fontSize = 19.sp, fontWeight = FontWeight.Bold, color = p.text) },
+        containerColor = p.surface,
+        shape = RoundedCornerShape(16.dp),
+        title = { Text(t.title, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, color = p.text) },
         text = {
             Column {
                 CourseChip(t.course)
@@ -190,7 +172,7 @@ fun TaskDialog(
                 }
             }
         },
-        confirmButton = { TextButton(onClick = onComplete) { Text(tr("완료", "Done"), fontWeight = FontWeight.Bold) } },
+        confirmButton = { TextButton(onClick = onComplete) { Text(tr("완료", "Done"), color = p.text, fontWeight = FontWeight.SemiBold) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(tr("닫기", "Close"), color = p.sub) } },
     )
 }

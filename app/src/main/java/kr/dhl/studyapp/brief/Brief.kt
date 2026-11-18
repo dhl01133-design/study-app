@@ -82,29 +82,29 @@ object Brief {
         val free = Fmt.duration(DaySlice.of(s, today).freeHours)
         val overdue = overdue(s, p, today).size
         return tr("오늘 ${n}개 · 빈 시간 $free", "$n today · $free free") +
-            if (overdue > 0) tr(" · ⚠ 기한 지남 $overdue", " · ⚠ $overdue overdue") else ""
+            if (overdue > 0) tr(" · 기한 지남 $overdue", " · $overdue overdue") else ""
     }
 
     fun summary(s: Snapshot, p: Prefs, today: LocalDate): List<String> {
         val out = mutableListOf<String>()
         val overdue = overdue(s, p, today)
-        if (overdue.isNotEmpty()) out += tr("⚠ 기한 지남: ", "⚠ Overdue: ") + overdue.take(4).joinToString(", ") { it.title }
+        if (overdue.isNotEmpty()) out += tr("기한 지남: ", "Overdue: ") + overdue.take(4).joinToString(", ") { it.title }
 
         val lines = todayLines(s, p, today)
-        if (lines.isEmpty()) out += tr("📌 오늘 일정 없음", "📌 Nothing today")
-        lines.take(6).forEach { out += "📌 ${it.time} ${withCourse(it.course, it.title)}" }
+        if (lines.isEmpty()) out += tr("오늘 일정 없음", "Nothing today")
+        lines.take(6).forEach { out += "${it.time}  ${withCourse(it.course, it.title)}" }
 
         val slice = DaySlice.of(s, today)
-        out += if (slice.free.isEmpty()) tr("🟢 빈 시간 없음", "🟢 No free time")
-        else tr("🟢 빈 시간 ${Fmt.duration(slice.freeHours)}: ", "🟢 ${Fmt.duration(slice.freeHours)} free: ") +
+        out += if (slice.free.isEmpty()) tr("빈 시간 없음", "No free time")
+        else tr("빈 시간 ${Fmt.duration(slice.freeHours)}: ", "Free ${Fmt.duration(slice.freeHours)}: ") +
             slice.free.joinToString(", ") { "${Fmt.clock(it.first)}–${Fmt.clock(it.second)}" }
 
         val markets = s.markets.filter { it.pct != null }
-        if (markets.isNotEmpty()) out += "📈 " + markets.joinToString(" · ") { "${marketName(it.name)} %+.2f%%".format(it.pct) }
+        if (markets.isNotEmpty()) out += markets.joinToString(" · ") { "${marketName(it.name)} %+.2f%%".format(it.pct) }
 
         val now = LocalDateTime.now()
         deadlines(s, now, now.plusDays(7)).take(4).forEach {
-            out += "🗓 ${Fmt.day(it.at.toLocalDate())} ${Fmt.time(it.at.toLocalTime())} ${withCourse(it.course, it.title)}"
+            out += tr("마감 ", "Due ") + "${Fmt.day(it.at.toLocalDate())} ${Fmt.time(it.at.toLocalTime())} ${withCourse(it.course, it.title)}"
         }
         return out
     }

@@ -109,23 +109,23 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
     }
 
     val fieldColors = OutlinedTextFieldDefaults.colors(
-        focusedContainerColor = p.tile, unfocusedContainerColor = p.tile,
-        focusedBorderColor = p.accent, unfocusedBorderColor = Color.Transparent,
+        focusedContainerColor = Color.Transparent, unfocusedContainerColor = Color.Transparent,
+        focusedBorderColor = p.text, unfocusedBorderColor = p.line,
         focusedLabelColor = p.accent, unfocusedLabelColor = p.sub,
         focusedTextColor = p.text, unfocusedTextColor = p.text, cursorColor = p.accent,
     )
-    val fieldShape = RoundedCornerShape(14.dp)
+    val fieldShape = RoundedCornerShape(10.dp)
 
     Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 12.dp),
+        verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
-        Text(tr("설정", "Settings"), fontSize = 30.sp, fontWeight = FontWeight.ExtraBold, color = p.text, modifier = Modifier.padding(top = 8.dp, bottom = 4.dp))
+        Text(tr("설정", "Settings"), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = p.text, modifier = Modifier.padding(top = 12.dp))
 
         Group(tr("화면", "Display")) {
             Text(tr("언어", "Language"), fontSize = 14.sp, color = p.sub, modifier = Modifier.padding(bottom = 8.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("system" to tr("시스템", "System"), "ko" to "한국어", "en" to "English").forEach { (k, label) ->
+                listOf("en" to "English", "ko" to "한국어", "system" to tr("시스템", "System")).forEach { (k, label) ->
                     Pill(label, Modifier.weight(1f), selected = lang == k) { setLanguage(k) }
                 }
             }
@@ -142,8 +142,8 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
                 Switch(
                     onlyIcampus, { onlyIcampus = it; prefs.onlyIcampus = it },
                     colors = SwitchDefaults.colors(
-                        checkedTrackColor = p.accent, uncheckedTrackColor = p.tile,
-                        uncheckedBorderColor = p.faint, uncheckedThumbColor = p.faint,
+                        checkedTrackColor = p.accent, checkedThumbColor = p.onAccent,
+                        uncheckedTrackColor = p.bg, uncheckedBorderColor = p.faint, uncheckedThumbColor = p.faint,
                     ),
                 )
             }
@@ -204,11 +204,11 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
         }
 
         Box(
-            Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).background(p.accent)
+            Modifier.fillMaxWidth().clip(RoundedCornerShape(10.dp)).background(p.accent)
                 .clickable(onClick = ::saveAndSync)
-                .padding(vertical = 17.dp),
+                .padding(vertical = 15.dp),
             contentAlignment = Alignment.Center,
-        ) { Text(tr("저장", "Save"), color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold) }
+        ) { Text(tr("저장", "Save"), color = p.onAccent, fontSize = 15.sp, fontWeight = FontWeight.SemiBold) }
         Spacer(Modifier.height(16.dp))
     }
 }
@@ -216,8 +216,8 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
 @Composable
 private fun Group(title: String, content: @Composable ColumnScope.() -> Unit) {
     val p = pal
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(p.card).padding(18.dp)) {
-        Text(title, fontSize = 17.sp, fontWeight = FontWeight.Bold, color = p.text, modifier = Modifier.padding(bottom = 12.dp))
+    Column(Modifier.fillMaxWidth()) {
+        Text(title, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = p.sub, modifier = Modifier.padding(bottom = 10.dp))
         content()
     }
 }
@@ -241,8 +241,8 @@ private fun SecretField(
         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
         trailingIcon = {
             Text(
-                if (shown) "🙈" else "👁", fontSize = 18.sp,
-                modifier = Modifier.clip(RoundedCornerShape(8.dp)).clickable { shown = !shown }.padding(8.dp),
+                if (shown) tr("숨기기", "Hide") else tr("보기", "Show"), fontSize = 13.sp, color = pal.sub,
+                modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable { shown = !shown }.padding(horizontal = 10.dp, vertical = 6.dp),
             )
         },
         supportingText = if (expectedLength != null && n != 0 && n != expectedLength) {

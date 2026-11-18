@@ -11,7 +11,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
@@ -27,7 +26,7 @@ fun UpdateBanner(prefs: Prefs) {
     val state by Updater.state.collectAsState()
     val s = state
     if (s is UpdateState.Available || s == UpdateState.Downloading || s == UpdateState.Installing) {
-        SoftCard(tint = pal.accentSoft) { UpdateStatus(s, prefs) }
+        UpdateStatus(s, prefs)
     }
 }
 
@@ -41,7 +40,7 @@ fun UpdateStatus(s: UpdateState, prefs: Prefs) {
         is UpdateState.Available -> Row(verticalAlignment = Alignment.CenterVertically) {
             Text(
                 tr("새 버전 build ${s.build}", "New version: build ${s.build}"),
-                fontSize = 15.sp, fontWeight = FontWeight.Bold, color = p.text, modifier = Modifier.weight(1f),
+                fontSize = 15.sp, color = p.text, modifier = Modifier.weight(1f),
             )
             Pill(tr("설치", "Install"), Modifier.width(96.dp), selected = true) { startInstall(ctx, scope, prefs.githubToken) }
         }

@@ -75,7 +75,7 @@ adb("shell", "pm", "grant", PKG, "android.permission.POST_NOTIFICATIONS", check=
 adb("logcat", "-c")
 
 # 1. Briefing
-start("--ez", "demo", "true", "--es", "lang", "ko", "--ei", "tab", "0")
+start("--ez", "demo", "true", "--es", "lang", "en", "--ei", "tab", "0")
 time.sleep(2)
 shot("1_briefing_top")
 adb("shell", "input", "swipe", "540", "1800", "540", "700", "400")
@@ -87,7 +87,7 @@ start("--ei", "tab", "1")
 time.sleep(2)
 shot("2_week_before")
 src = find(lambda t: t == "DEMO 끌어서 옮기기")
-dst = find(lambda t: t.startswith("내일 · "))
+dst = find(lambda t: t.startswith("Tomorrow · ") or t.startswith("내일 · "))
 if not src or not dst:
     log(f"drag: could not find nodes (src={src}, dst={dst})")
 else:
@@ -138,24 +138,24 @@ time.sleep(1)
 shot("6_dark_settings")
 start("--es", "theme", "light", "--ei", "tab", "0")
 
-# 4c. English
-start("--es", "lang", "en", "--ei", "tab", "0")
+# 4c. Korean
+start("--es", "lang", "ko", "--ei", "tab", "0")
 time.sleep(1.5)
-shot("7_en_briefing")
+shot("7_ko_briefing")
 start("--ei", "tab", "1")
 time.sleep(1.5)
-shot("7_en_week")
+shot("7_ko_week")
 start("--ei", "tab", "2")
 time.sleep(1)
-shot("7_en_settings")
+shot("7_ko_settings")
 start("--ez", "demoNotify", "true")
 time.sleep(2)
 adb("shell", "cmd", "statusbar", "expand-notifications", check=False)
 time.sleep(2)
-shot("7_en_notifications")
+shot("7_ko_notifications")
 adb("shell", "cmd", "statusbar", "collapse", check=False)
 adb("shell", "cmd", "notification", "cancel_all", check=False)
-start("--es", "lang", "ko", "--ei", "tab", "0")
+start("--es", "lang", "en", "--ei", "tab", "0")
 
 # 5. Notifications
 start("--ez", "demoNotify", "true")
