@@ -1,6 +1,8 @@
 package kr.dhl.studyapp.widget
 
 import android.content.Context
+import android.content.res.Configuration
+import android.graphics.Bitmap
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -8,10 +10,14 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
+import androidx.glance.Image
+import androidx.glance.ImageProvider
+import androidx.glance.LocalSize
 import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
@@ -34,6 +40,7 @@ import androidx.glance.text.TextStyle
 import androidx.glance.unit.ColorProvider as SolidColor
 import kr.dhl.studyapp.MainActivity
 import kr.dhl.studyapp.brief.Brief
+import kr.dhl.studyapp.brief.DaySlice
 import kr.dhl.studyapp.brief.Fmt
 import kr.dhl.studyapp.brief.Line
 import kr.dhl.studyapp.data.Courses
@@ -45,6 +52,9 @@ import java.time.LocalDate
 /** Home-screen widget: today's classes, events and tasks. Tap to open the app. */
 class TodayWidget : GlanceAppWidget() {
 
+    // Exact size, so the time bar can be drawn at the widget's real width.
+    override val sizeMode = SizeMode.Exact
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val repo = Repo(context)
         L.apply(repo.prefs.langMode)
@@ -52,11 +62,18 @@ class TodayWidget : GlanceAppWidget() {
         val today = LocalDate.now()
         val lines = Brief.todayLines(s, repo.prefs, today)
         val overdue = Brief.overdue(s, repo.prefs, today).size
-        provideContent { Content(today, lines, overdue) }
+        val slice = DaySlice.of(s, today)
+        val density = context.resources.displayMetrics.density
+        val dark = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        provideContent {
+            // 28 dp of horizontal padding inside the widget
+            val bar = SliceBitmap.render(slice, LocalSize.current.width.value - 28f, density, dark)
+            Content(today, lines, overdue, bar)
+        }
     }
 
     @Composable
-    private fun Content(today: LocalDate, lines: List<Line>, overdue: Int) {
+    private fun Content(today: LocalDate, lines: List<Line>, overdue: Int, bar: Bitmap) {
         Column(
             GlanceModifier.fillMaxSize().background(BG).cornerRadius(16.dp).padding(14.dp)
                 .clickable(actionStartActivity<MainActivity>()),
@@ -69,6 +86,8 @@ class TodayWidget : GlanceAppWidget() {
                 }
             }
             Spacer(GlanceModifier.height(8.dp))
+            Image(ImageProvider(bar), contentDescription = null, modifier = GlanceModifier.fillMaxWidth().height(36.dp))
+            Spacer(GlanceModifier.height(6.dp))
             if (lines.isEmpty()) {
                 Text(tr("없음", "Nothing"), style = TextStyle(color = SUB, fontSize = 13.sp))
             } else {
