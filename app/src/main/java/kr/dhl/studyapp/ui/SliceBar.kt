@@ -25,7 +25,7 @@ private const val LAST_HOUR = 24.0
 
 /** 08–24: blue = class, dark = other event, hatched = travel, green = free, blue line = now. */
 @Composable
-fun SliceBar(slice: DaySlice) {
+fun SliceBar(slice: DaySlice, now: LocalTime = LocalTime.now()) {
     val p = pal
     Canvas(Modifier.fillMaxWidth().height(56.dp)) {
         val w = size.width
@@ -63,9 +63,9 @@ fun SliceBar(slice: DaySlice) {
             }
         }
 
-        val now = LocalTime.now().let { it.hour + it.minute / 60.0 }
-        if (now in FIRST_HOUR..LAST_HOUR) {
-            drawLine(p.accent, Offset(x(now), -4f), Offset(x(now), h + 4f), strokeWidth = 2.dp.toPx())
+        val nowHour = now.hour + now.minute / 60.0
+        if (nowHour in FIRST_HOUR..LAST_HOUR) {
+            drawLine(p.accent, Offset(x(nowHour), -4f), Offset(x(nowHour), h + 4f), strokeWidth = 2.dp.toPx())
         }
 
         paint.apply { color = p.faint.toArgb(); textAlign = Paint.Align.CENTER }

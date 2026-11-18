@@ -24,21 +24,41 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.graphics.lerp
 import kr.dhl.studyapp.brief.Line
+import kr.dhl.studyapp.brief.Upcoming
 import kr.dhl.studyapp.data.Courses
 import kr.dhl.studyapp.i18n.tr
 
-/** Page title with a plain-text sync action. */
+/** Page title with optional text actions on the right. Pull down to refresh replaces a sync button. */
 @Composable
-fun Header(title: String, syncing: Boolean, onRefresh: () -> Unit) {
+fun Header(title: String, actions: List<Pair<String, () -> Unit>> = emptyList()) {
     val p = pal
     Row(verticalAlignment = Alignment.Bottom, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp)) {
         Text(title, fontSize = 28.sp, fontWeight = FontWeight.Bold, color = p.text, letterSpacing = (-0.5).sp, modifier = Modifier.weight(1f))
-        Text(
-            if (syncing) tr("동기화 중", "Syncing") else tr("동기화", "Sync"),
-            fontSize = 13.sp, color = p.sub,
-            modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(enabled = !syncing, onClick = onRefresh)
-                .padding(horizontal = 6.dp, vertical = 4.dp),
-        )
+        actions.forEach { (label, onClick) -> TextAction(label, onClick) }
+    }
+}
+
+/** Small accent-colored text button. */
+@Composable
+fun TextAction(label: String, onClick: () -> Unit) {
+    Text(
+        label, fontSize = 14.sp, color = pal.accent, fontWeight = FontWeight.Medium,
+        modifier = Modifier.clip(RoundedCornerShape(6.dp)).clickable(onClick = onClick).padding(horizontal = 6.dp, vertical = 4.dp),
+    )
+}
+
+/** "Now" / "Next" / "Due" lines with countdowns. */
+@Composable
+fun UpcomingLines(lines: List<Upcoming>) {
+    val p = pal
+    Column {
+        lines.forEach { u ->
+            Row(Modifier.fillMaxWidth().padding(vertical = 3.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(u.label, fontSize = 13.sp, color = p.sub, modifier = Modifier.width(48.dp))
+                Text(u.title, fontSize = 15.sp, color = p.text, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Text(u.note, fontSize = 13.sp, color = if (u.isDeadline) p.danger else p.accent, modifier = Modifier.padding(start = 8.dp))
+            }
+        }
     }
 }
 

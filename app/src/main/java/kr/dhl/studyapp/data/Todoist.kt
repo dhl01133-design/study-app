@@ -41,6 +41,17 @@ class Todoist(private val token: String) {
         post("/tasks/$id", body.toString())
     }
 
+    /** Adds a task with Todoist's own parsing of dates, #project, @label and p1–p4 in [text]. */
+    fun quickAdd(text: String) {
+        val quick = buildJsonObject { put("text", text) }.toString()
+        try {
+            post("/tasks/quick", quick)
+        } catch (e: HttpException) {
+            if (e.code != 404) throw e
+            post("/tasks", buildJsonObject { put("content", text) }.toString())
+        }
+    }
+
     fun close(id: String) = post("/tasks/$id/close")
 
     fun reopen(id: String) = post("/tasks/$id/reopen")

@@ -21,6 +21,7 @@ import kr.dhl.studyapp.brief.Fmt
 import kr.dhl.studyapp.data.Prefs
 import kr.dhl.studyapp.data.Snapshot
 import kr.dhl.studyapp.i18n.tr
+import java.time.Duration
 import java.time.LocalDate
 import java.time.LocalDateTime
 
@@ -29,6 +30,7 @@ object Notify {
     private const val CH_BRIEF = "briefing"
     private const val CH_DEADLINE = "deadline"
     private const val BRIEF_ID = 1
+    private const val UPDATE_ID = 2
     private const val ALARM_COLOR = 0xFFC4372D.toInt()
 
     /** Creates (or renames, after a language change) the notification channels. */
@@ -63,21 +65,54 @@ object Notify {
         )
     }
 
-    fun deadline(ctx: Context, id: Int, course: String, title: String, at: LocalDateTime, hours: Int) {
-        val head = if (hours == 0) tr("지금 마감", "Due now") else tr("${hours}시간 후 마감", "Due in $hours h")
+    /**
+     * Deadline alarm with Done / Snooze 1 h / Tomorrow. Done and Tomorrow only appear for a single task;
+     * the countdown in the title is worked out when it rings (so a snoozed alarm shows the new time left).
+     */
+    fun deadline(ctx: Context, id: Int, course: String, title: String, at: LocalDateTime, taskIds: List<String>) {
+        val minutes = Duration.between(LocalDateTime.now(), at).toMinutes()
+        val head = when {
+            minutes <= 5 -> tr("지금 마감", "Due now")
+            minutes < 60 -> tr("${minutes}분 후 마감", "Due in $minutes min")
+            else -> tr("${(minutes + 30) / 60}시간 후 마감", "Due in ${(minutes + 30) / 60} h")
+        }
         val body = Brief.withCourse(course, title) + " · " + Fmt.day(at.toLocalDate()) + " " + Fmt.time(at.toLocalTime())
+        val extras = Intent()
+            .putExtra(Alarms.EXTRA_ID, id).putExtra(Alarms.EXTRA_COURSE, course).putExtra(Alarms.EXTRA_TITLE, title)
+            .putExtra(Alarms.EXTRA_AT, at.toString()).putExtra(Alarms.EXTRA_TASKS, taskIds.toTypedArray())
+        fun action(label: String, action: String, n: Int) = NotificationCompat.Action(
+            0, label,
+            PendingIntent.getBroadcast(
+                ctx, id * 4 + n,
+                Intent(ctx, AlarmReceiver::class.java).putExtras(extras).setAction(action),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            ),
+        )
+        val b = NotificationCompat.Builder(ctx, CH_DEADLINE)
+            .setContentTitle(head)
+            .setContentText(body)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setColor(ALARM_COLOR)
+            .setContentIntent(openApp(ctx, MainActivity.TAB_TODO))
+        if (taskIds.size == 1) b.addAction(action(tr("완료", "Done"), Alarms.ACTION_DONE, 1))
+        b.addAction(action(tr("1시간 뒤", "Snooze 1 h"), Alarms.ACTION_SNOOZE, 2))
+        if (taskIds.size == 1) b.addAction(action(tr("내일", "Tomorrow"), Alarms.ACTION_TOMORROW, 3))
+        post(ctx, id, b)
+    }
+
+    /** "Update: build N", tapping opens the app where the update can be installed. */
+    fun update(ctx: Context, build: Int) {
         post(
-            ctx, id,
-            NotificationCompat.Builder(ctx, CH_DEADLINE)
-                .setContentTitle(head)
-                .setContentText(body)
-                .setStyle(NotificationCompat.BigTextStyle().bigText(body))
-                .setPriority(NotificationCompat.PRIORITY_HIGH)
-                .setCategory(NotificationCompat.CATEGORY_ALARM)
-                .setColor(ALARM_COLOR)
-                .setContentIntent(openApp(ctx, MainActivity.TAB_TODO)),
+            ctx, UPDATE_ID,
+            NotificationCompat.Builder(ctx, CH_BRIEF)
+                .setContentTitle(tr("업데이트 build $build", "Update: build $build"))
+                .setContentIntent(openApp(ctx, MainActivity.TAB_BRIEFING)),
         )
     }
+
+    fun cancel(ctx: Context, id: Int) = NotificationManagerCompat.from(ctx).cancel(id)
 
     @SuppressLint("MissingPermission")
     private fun post(ctx: Context, id: Int, builder: NotificationCompat.Builder) {

@@ -11,7 +11,12 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -27,24 +32,35 @@ import kr.dhl.studyapp.data.Prefs
 import kr.dhl.studyapp.data.Snapshot
 import kr.dhl.studyapp.i18n.marketName
 import kr.dhl.studyapp.i18n.tr
-import java.time.LocalDate
+import java.time.LocalDateTime
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () -> Unit) {
     val p = pal
-    val today = LocalDate.now()
+    // Ticks every minute so countdowns and the "now" line stay current.
+    val now by produceState(LocalDateTime.now()) {
+        while (true) {
+            delay(60_000)
+            value = LocalDateTime.now()
+        }
+    }
+    val today = now.toLocalDate()
+    val upcoming = Brief.upcoming(s, now)
     val overdue = Brief.overdue(s, prefs, today)
     val todayLines = Brief.todayLines(s, prefs, today)
     val week = Brief.week(s, prefs, today)
     val slice = DaySlice.of(s, today)
 
+    PullToRefreshBox(isRefreshing = syncing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
     LazyColumn(
         Modifier.fillMaxSize(),
         contentPadding = PaddingValues(horizontal = 24.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
-        item { Header(Fmt.day(today), syncing, onRefresh) }
+        item { Header(Fmt.day(today)) }
         item { UpdateBanner(prefs) }
+        if (upcoming.isNotEmpty()) item { UpcomingLines(upcoming) }
         item {
             Row {
                 Stat("${todayLines.size}", tr("오늘", "Today"), Modifier.weight(1f))
@@ -61,7 +77,7 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
         }
         item {
             Section(tr("시간", "Time")) {
-                SliceBar(slice)
+                SliceBar(slice, now.toLocalTime())
                 if (slice.free.isEmpty()) Text(tr("빈 시간 없음", "No free time"), color = p.sub, fontSize = 14.sp)
                 slice.free.forEach { (start, end) -> FreeRow(start, end) }
             }
@@ -90,6 +106,7 @@ fun BriefingScreen(s: Snapshot, prefs: Prefs, syncing: Boolean, onRefresh: () ->
             }
         }
         item { Spacer(Modifier.height(8.dp)) }
+    }
     }
 }
 

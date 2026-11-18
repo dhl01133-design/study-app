@@ -82,7 +82,7 @@ class MainActivity : ComponentActivity() {
         }
         if (i.getBooleanExtra("demoNotify", false)) {
             Notify.briefing(this, Store.snapshot.value)
-            Notify.deadline(this, 998, "선형대수학", "WeBWorK hw11 외 2개", LocalDateTime.now().plusHours(6), 6)
+            Notify.deadline(this, 998, "선형대수학", "WeBWorK hw11", LocalDateTime.now().plusHours(6), listOf("demo2"))
         }
     }
 

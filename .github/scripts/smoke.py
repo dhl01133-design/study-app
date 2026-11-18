@@ -121,6 +121,55 @@ if t:
 else:
     log("dialog: task not found on screen")
 
+# 3b. Swipe right to complete
+start("--ei", "tab", "1")
+time.sleep(1.5)
+sw = find(lambda t: t.startswith("WeBWorK hw11"))
+if sw:
+    (x, y) = sw[1]
+    adb("shell", "input", "swipe", "200", str(y), "900", str(y), "250")
+    time.sleep(1.2)
+    shot("9_swipe_done")
+    snack = find(lambda t: t.endswith("done") or t.endswith("완료"))
+    log("swipe result: " + (snack[0] if snack else "(none)"))
+else:
+    log("swipe: task not found")
+time.sleep(4)
+
+# 3c. Quick add
+field = find(lambda t: t == "Add task" or t == "할 일 추가")
+if field:
+    adb("shell", "input", "tap", str(field[1][0]), str(field[1][1]))
+    time.sleep(0.8)
+    adb("shell", "input", "text", "Quick%sadd%stest")
+    adb("shell", "input", "keyevent", "KEYCODE_ENTER")
+    time.sleep(1.5)
+    adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    added = find(lambda t: t == "Quick add test")
+    log("quick add: " + ("shown" if added else "not shown"))
+    time.sleep(4)
+else:
+    log("quick add: field not found")
+
+# 3d. Plan
+plan = find(lambda t: t == "Plan" or t == "계획")
+if plan:
+    adb("shell", "input", "tap", str(plan[1][0]), str(plan[1][1]))
+    time.sleep(1.5)
+    shot("9_plan_dialog")
+    apply_btn = find(lambda t: t == "Apply" or t == "적용")
+    if apply_btn:
+        adb("shell", "input", "tap", str(apply_btn[1][0]), str(apply_btn[1][1]))
+        time.sleep(1.5)
+        snack = find(lambda t: "planned" in t or "계획됨" in t)
+        log("plan result: " + (snack[0] if snack else "(none)"))
+        shot("9_plan_applied")
+    else:
+        log("plan: " + ("no dialog" if not find(lambda t: "Nothing to plan" in t) else "nothing to plan"))
+else:
+    log("plan: button not found")
+time.sleep(4)
+
 # 4. Settings
 start("--ei", "tab", "2")
 time.sleep(1)
@@ -163,6 +212,7 @@ time.sleep(2)
 adb("shell", "cmd", "statusbar", "expand-notifications", check=False)
 time.sleep(2)
 shot("5_notifications")
+log("alarm buttons: " + ", ".join(t for t in ("Done", "Snooze 1 h", "Tomorrow") if find(lambda x, t=t: x.upper() == t.upper())))
 adb("shell", "cmd", "statusbar", "collapse", check=False)
 
 # 5b. Home-screen widget: pin it, accept the launcher dialog, look at the home screen

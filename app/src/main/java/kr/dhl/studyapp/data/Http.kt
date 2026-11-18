@@ -7,6 +7,9 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 
+/** The server answered with an error status. Other IOExceptions mean the request never got through (e.g. offline). */
+class HttpException(val code: Int, body: String) : IOException("HTTP $code ${body.take(160)}")
+
 object Http {
     fun request(
         url: String,
@@ -28,7 +31,7 @@ object Http {
             val code = c.responseCode
             val stream = if (code in 200..299) c.inputStream else c.errorStream
             val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
-            if (code !in 200..299) throw IOException("HTTP $code ${text.take(160)}")
+            if (code !in 200..299) throw HttpException(code, text)
             return text
         } finally {
             c.disconnect()

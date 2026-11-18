@@ -3,7 +3,9 @@ package kr.dhl.studyapp.ui
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -46,6 +48,7 @@ import java.time.LocalDate
 import java.time.ZoneOffset
 
 /** A day's card: title, classes in one line, other events, then the tasks. Reports its bounds as a drop target. */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun DaySection(
     key: String,
@@ -54,6 +57,8 @@ fun DaySection(
     highlight: Boolean,
     titleColor: Color,
     onBounds: (String, Rect) -> Unit,
+    action: Pair<String, () -> Unit>? = null,
+    onTitleLongPress: (() -> Unit)? = null,
     content: @Composable ColumnScope.() -> Unit,
 ) {
     val p = pal
@@ -69,7 +74,14 @@ fun DaySection(
             .animateContentSize(),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        Text(title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = titleColor, modifier = Modifier.padding(start = 4.dp, bottom = 2.dp))
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                title, fontWeight = FontWeight.SemiBold, fontSize = 15.sp, color = titleColor,
+                modifier = Modifier.weight(1f).padding(start = 4.dp, bottom = 2.dp)
+                    .then(if (onTitleLongPress != null) Modifier.combinedClickable(onClick = {}, onLongClick = onTitleLongPress) else Modifier),
+            )
+            action?.let { (label, onClick) -> TextAction(label, onClick) }
+        }
         events.orEmpty().let { evs ->
             val classes = evs.filter { it.isClass && !it.allDay }
             if (classes.isNotEmpty()) {
@@ -126,6 +138,11 @@ fun TaskCard(t: TaskItem, onCheck: (() -> Unit)?) {
         Column(Modifier.weight(1f)) {
             Text(t.title, fontSize = 15.sp, color = p.text, maxLines = 2, overflow = TextOverflow.Ellipsis)
             CourseLabel(t.course)
+            t.progress?.let { pct ->
+                Box(Modifier.padding(top = 4.dp).fillMaxWidth(0.6f).height(3.dp).clip(RoundedCornerShape(2.dp)).background(p.line)) {
+                    Box(Modifier.fillMaxWidth(pct / 100f).height(3.dp).background(if (pct >= 100) p.good else p.accent))
+                }
+            }
         }
         Column(horizontalAlignment = Alignment.End) {
             t.dueTime?.let { Text(it, fontSize = 13.sp, color = p.sub) }

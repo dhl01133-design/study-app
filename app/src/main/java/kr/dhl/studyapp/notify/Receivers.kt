@@ -9,22 +9,46 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kr.dhl.studyapp.data.Repo
+import kr.dhl.studyapp.data.TaskItem
+import java.time.LocalDate
 import java.time.LocalDateTime
 
-/** Fires the briefing (after a quick sync) and the deadline alarms. */
+/** Fires the briefing (after a quick sync) and the deadline alarms, and handles the alarm buttons. */
 class AlarmReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val ctx = context.applicationContext
+        val id = intent.getIntExtra(Alarms.EXTRA_ID, 3)
+        val taskIds = intent.getStringArrayExtra(Alarms.EXTRA_TASKS)?.toList().orEmpty()
         when (intent.action) {
             Alarms.ACTION_DEADLINE -> Notify.deadline(
-                ctx,
-                id = intent.getIntExtra(Alarms.EXTRA_ID, 3),
+                ctx, id,
                 course = intent.getStringExtra(Alarms.EXTRA_COURSE) ?: "",
                 title = intent.getStringExtra(Alarms.EXTRA_TITLE) ?: "",
                 at = runCatching { LocalDateTime.parse(intent.getStringExtra(Alarms.EXTRA_AT)) }.getOrElse { LocalDateTime.now() },
-                hours = intent.getIntExtra(Alarms.EXTRA_HOURS, 1),
+                taskIds = taskIds,
             )
+            Alarms.ACTION_SNOOZE -> {
+                Notify.cancel(ctx, id)
+                Alarms.snooze(ctx, intent)
+            }
+            Alarms.ACTION_DONE -> onTask(ctx, id, taskIds) { repo, t -> repo.complete(t) }
+            Alarms.ACTION_TOMORROW -> onTask(ctx, id, taskIds) { repo, t -> repo.moveTask(t, LocalDate.now().plusDays(1)) }
             Alarms.ACTION_BRIEF -> briefAfterSync(ctx)
+        }
+    }
+
+    /** Runs a change on the alarm's task and clears the notification. */
+    private fun onTask(ctx: Context, id: Int, taskIds: List<String>, change: suspend (Repo, TaskItem) -> Unit) {
+        Notify.cancel(ctx, id)
+        val taskId = taskIds.singleOrNull() ?: return
+        val pending = goAsync()
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val repo = Repo(ctx)
+                repo.load().tasks.firstOrNull { it.id == taskId }?.let { change(repo, it) }
+            } finally {
+                pending.finish()
+            }
         }
     }
 

@@ -11,12 +11,28 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import kr.dhl.studyapp.data.Repo
+import kr.dhl.studyapp.update.UpdateState
+import kr.dhl.studyapp.update.Updater
 import java.util.concurrent.TimeUnit
 
 /** Background sync, which also reschedules alarms. */
 class SyncWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
-    override suspend fun doWork(): Result =
-        runCatching { Repo(applicationContext).sync() }.fold({ Result.success() }, { Result.retry() })
+    override suspend fun doWork(): Result {
+        val repo = Repo(applicationContext)
+        val ok = runCatching { repo.sync() }.isSuccess
+        notifyUpdate(repo)
+        return if (ok) Result.success() else Result.retry()
+    }
+
+    /** Posts one notification per new build. */
+    private suspend fun notifyUpdate(repo: Repo) {
+        Updater.check(applicationContext, repo.prefs.githubToken)
+        val s = Updater.state.value
+        if (s is UpdateState.Available && s.build > repo.prefs.notifiedBuild) {
+            repo.prefs.notifiedBuild = s.build
+            Notify.update(applicationContext, s.build)
+        }
+    }
 
     companion object {
         private val ONLINE = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()

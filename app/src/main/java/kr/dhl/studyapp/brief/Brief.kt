@@ -9,11 +9,20 @@ import kr.dhl.studyapp.i18n.tr
 import java.time.LocalDate
 import java.time.LocalDateTime
 
-/** A course deadline that gets alarms. */
-data class Deadline(val key: String, val course: String, val title: String, val at: LocalDateTime)
+/** A course deadline that gets alarms; [taskIds] are the Todoist tasks behind it (none for calendar events). */
+data class Deadline(
+    val key: String,
+    val course: String,
+    val title: String,
+    val at: LocalDateTime,
+    val taskIds: List<String> = emptyList(),
+)
 
-/** One row in a list: time label, course and title. */
-data class Line(val time: String, val course: String, val title: String)
+/** One row in a list: time label, course and title; [taskId] when the row is a task. */
+data class Line(val time: String, val course: String, val title: String, val taskId: String? = null)
+
+/** "Now"/"Next"/"Due" line with a countdown. */
+data class Upcoming(val label: String, val title: String, val course: String, val note: String, val isDeadline: Boolean)
 
 /** What the briefing screen and notification show. */
 object Brief {
@@ -28,7 +37,7 @@ object Brief {
      */
     fun deadlines(s: Snapshot, from: LocalDateTime, to: LocalDateTime): List<Deadline> {
         val fromTasks = s.tasks.filter { !it.isBookkeeping && it.isIcampus }
-            .mapNotNull { t -> t.deadline?.let { Deadline("t:${t.id}", t.course, t.title, it) } }
+            .mapNotNull { t -> t.deadline?.let { Deadline("t:${t.id}", t.course, t.title, it, listOf(t.id)) } }
         val fromEvents = s.events.filter { it.isDeadline }
             .map { e -> Deadline("e:${e.uid}:${e.start}", e.course, e.title, e.dueAt) }
         return (fromTasks + fromEvents)
@@ -72,7 +81,25 @@ object Brief {
 
     private fun taskLine(t: TaskItem, allDayLabel: String): Line {
         val due = t.deadline?.takeIf { t.isPlanned }?.let { tr(" (마감 ", " (due ") + Fmt.md(it.toLocalDate()) + ")" } ?: ""
-        return Line(t.time?.let { "~" + Fmt.time(it) } ?: allDayLabel, t.course, t.title + due)
+        return Line(t.time?.let { "~" + Fmt.time(it) } ?: allDayLabel, t.course, t.title + due, t.id)
+    }
+
+    /** What's on now or next today (timed events), and the next deadline within 7 days. */
+    fun upcoming(s: Snapshot, now: LocalDateTime): List<Upcoming> {
+        val out = mutableListOf<Upcoming>()
+        val timed = s.events.filter { !it.allDay && !it.isDeadline && it.startAt != it.endAt }.sortedBy { it.start }
+        val current = timed.firstOrNull { !it.startAt.isAfter(now) && it.endAt.isAfter(now) }
+        val next = timed.firstOrNull { it.startAt.isAfter(now) && it.startAt.toLocalDate() == now.toLocalDate() }
+        if (current != null) {
+            out += Upcoming(tr("지금", "Now"), current.title, current.course, tr("~", "until ") + Fmt.time(current.endAt.toLocalTime()), false)
+        }
+        if (next != null) {
+            out += Upcoming(tr("다음", "Next"), next.title, next.course, Fmt.until(now, next.startAt), false)
+        }
+        deadlines(s, now, now.plusDays(7)).firstOrNull()?.let {
+            out += Upcoming(tr("마감", "Due"), it.title, it.course, Fmt.until(now, it.at), true)
+        }
+        return out
     }
 
     // ---- notification text ----

@@ -18,11 +18,14 @@ import java.time.ZoneId
 object Alarms {
     const val ACTION_BRIEF = "kr.dhl.studyapp.BRIEF"
     const val ACTION_DEADLINE = "kr.dhl.studyapp.DEADLINE"
+    const val ACTION_DONE = "kr.dhl.studyapp.DONE"
+    const val ACTION_SNOOZE = "kr.dhl.studyapp.SNOOZE"
+    const val ACTION_TOMORROW = "kr.dhl.studyapp.TOMORROW"
+    const val EXTRA_TASKS = "tasks"
     const val EXTRA_ID = "id"
     const val EXTRA_COURSE = "course"
     const val EXTRA_TITLE = "title"
     const val EXTRA_AT = "at"
-    const val EXTRA_HOURS = "hours"
 
     private const val BRIEF_CODE = 1
     private const val GROUP_LIST_MAX = 6
@@ -42,7 +45,7 @@ object Alarms {
                 val code = (d.key + "|" + hours).hashCode().let { if (it == BRIEF_CODE) BRIEF_CODE + 1 else it }
                 val intent = intent(ctx, ACTION_DEADLINE)
                     .putExtra(EXTRA_ID, code).putExtra(EXTRA_COURSE, d.course).putExtra(EXTRA_TITLE, d.title)
-                    .putExtra(EXTRA_AT, d.at.toString()).putExtra(EXTRA_HOURS, hours)
+                    .putExtra(EXTRA_AT, d.at.toString()).putExtra(EXTRA_TASKS, d.taskIds.toTypedArray())
                 setExact(am, ringAt, PendingIntent.getBroadcast(ctx, code, intent, UPDATE))
                 codes += code.toString()
             }
@@ -70,7 +73,16 @@ object Alarms {
             course = courses.singleOrNull() ?: "",
             title = tr("${ds.size}개 — ", "${ds.size} items — ") + listed + if (more > 0) tr(" 외 ${more}개", " +$more more") else "",
             at = at,
+            taskIds = ds.flatMap { it.taskIds },
         )
+    }
+
+    /** Rings the same deadline alarm again in an hour. */
+    fun snooze(ctx: Context, from: Intent) {
+        val id = from.getIntExtra(EXTRA_ID, 3)
+        val intent = intent(ctx, ACTION_DEADLINE).putExtras(from).setAction(ACTION_DEADLINE)
+        val pi = PendingIntent.getBroadcast(ctx, id xor 0x5A5A5A, intent, UPDATE)
+        setExact(ctx.getSystemService(AlarmManager::class.java), LocalDateTime.now().plusHours(1), pi)
     }
 
     private fun cancelDeadlineAlarms(ctx: Context, am: AlarmManager, codes: Set<String>) {

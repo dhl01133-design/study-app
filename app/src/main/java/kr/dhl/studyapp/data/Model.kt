@@ -48,10 +48,16 @@ data class TaskItem(
             return closest?.atTime(t) ?: planned
         }
 
+    /** Progress written in the description, e.g. "62%" from a WeBWorK check. */
+    val progress: Int? get() = PCT_RE.find(description)?.groupValues?.get(1)?.toIntOrNull()?.takeIf { it in 0..100 }
+
+    val isVideo: Boolean get() = "video" in labels
+
     /** True when the planned day differs from the real deadline. */
     val isPlanned: Boolean get() = deadline?.toLocalDate()?.let { it != date } ?: false
 
     companion object {
+        private val PCT_RE = Regex("(\\d{1,3})\\s*%")
         private val DUE_RE = Regex("(?:Due|due|마감)\\s*:?\\s*(\\d{1,2})/(\\d{1,2})(?:\\s*(?:at\\s*)?(\\d{1,2}):(\\d{2}))?")
     }
 }
@@ -95,6 +101,17 @@ data class CalEvent(
 @Serializable
 data class MarketItem(val name: String, val close: Double? = null, val pct: Double? = null)
 
+/** A Todoist change made while offline, sent on the next sync. */
+@Serializable
+data class PendingOp(
+    val type: String,               // due | close | reopen | add
+    val taskId: String = "",
+    val date: String? = null,
+    val time: String? = null,
+    val text: String = "",
+    val task: TaskItem? = null,     // for reopen
+)
+
 /** Everything the app shows, cached to disk between syncs. */
 @Serializable
 data class Snapshot(
@@ -107,5 +124,14 @@ data class Snapshot(
 ) {
     fun updateTask(id: String, f: (TaskItem) -> TaskItem) = copy(tasks = tasks.map { if (it.id == id) f(it) else it })
     fun removeTask(id: String) = copy(tasks = tasks.filter { it.id != id })
-    fun addTask(t: TaskItem) = copy(tasks = tasks + t)
+    fun addTask(t: TaskItem) = if (tasks.any { it.id == t.id }) this else copy(tasks = tasks + t)
+
+    /** Re-applies an offline change on top of freshly fetched data. */
+    fun withOp(op: PendingOp): Snapshot = when (op.type) {
+        "due" -> updateTask(op.taskId) { it.copy(dueDate = op.date, dueTime = op.time) }
+        "close" -> removeTask(op.taskId)
+        "reopen" -> op.task?.let { addTask(it) } ?: this
+        "add" -> addTask(TaskItem(id = "local:" + op.text.hashCode(), content = op.text))
+        else -> this
+    }
 }

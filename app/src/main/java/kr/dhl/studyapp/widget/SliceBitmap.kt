@@ -17,6 +17,18 @@ object SliceBitmap {
     private const val FIRST_HOUR = 8.0
     private const val LAST_HOUR = 24.0
 
+    /** A small gray ring for the widget's completion circles. */
+    fun ring(density: Float, dark: Boolean): Bitmap {
+        val p = if (dark) DarkPal else LightPal
+        val size = (18 * density).toInt()
+        val bmp = Bitmap.createBitmap(size, size, Bitmap.Config.ARGB_8888)
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            style = Paint.Style.STROKE; strokeWidth = 1.5f * density; color = p.faint.toArgb()
+        }
+        Canvas(bmp).drawCircle(size / 2f, size / 2f, size / 2f - 1.5f * density, paint)
+        return bmp
+    }
+
     fun render(slice: DaySlice, widthDp: Float, density: Float, dark: Boolean): Bitmap {
         val p = if (dark) DarkPal else LightPal
         val w = max((widthDp * density).toInt(), 10)

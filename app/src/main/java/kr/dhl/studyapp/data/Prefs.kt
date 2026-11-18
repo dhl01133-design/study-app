@@ -18,6 +18,7 @@ class Prefs(ctx: Context) {
     var themeMode by string("theme", "system")                 // system | light | dark
     var langMode by string("lang", "en")                       // en (default) | ko | system
     var onlyIcampus by boolean("only_icampus", false)
+    var notifiedBuild by int("notified_build", 0)                  // last build an update notification was shown for
 
     var alarmCodes: Set<String>
         get() = p.getStringSet("alarm_codes", emptySet())?.toSet() ?: emptySet()
@@ -40,6 +41,8 @@ class Prefs(ctx: Context) {
     )
 
     private fun boolean(key: String, default: Boolean) = pref({ getBoolean(key, default) }, { putBoolean(key, it) })
+
+    private fun int(key: String, default: Int) = pref({ getInt(key, default) }, { putInt(key, it) })
 
     private fun <T> pref(read: SharedPreferences.() -> T, write: SharedPreferences.Editor.(T) -> Unit) =
         object : ReadWriteProperty<Any?, T> {

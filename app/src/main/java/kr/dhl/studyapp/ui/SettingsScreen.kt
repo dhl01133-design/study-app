@@ -175,7 +175,7 @@ fun SettingsScreen(repo: Repo, snackbar: SnackbarHostState) {
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Pill(tr("브리핑 테스트", "Test briefing"), Modifier.weight(1f)) { Notify.briefing(ctx, Store.snapshot.value) }
                 Pill(tr("알람 테스트", "Test alarm"), Modifier.weight(1f)) {
-                    Notify.deadline(ctx, 999, tr("테스트", "Test"), tr("마감 알람 소리 확인", "Checking the alarm sound"), LocalDateTime.now().plusHours(1), 1)
+                    Notify.deadline(ctx, 999, tr("테스트", "Test"), tr("마감 알람 소리 확인", "Checking the alarm sound"), LocalDateTime.now().plusHours(1), emptyList())
                 }
             }
             val pm = ctx.getSystemService(PowerManager::class.java)

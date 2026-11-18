@@ -13,7 +13,11 @@ import androidx.glance.GlanceModifier
 import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalSize
+import androidx.glance.action.ActionParameters
+import androidx.glance.action.actionParametersOf
 import androidx.glance.action.actionStartActivity
+import androidx.glance.appwidget.action.ActionCallback
+import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
@@ -33,6 +37,7 @@ import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
+import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
@@ -43,11 +48,13 @@ import kr.dhl.studyapp.brief.Brief
 import kr.dhl.studyapp.brief.DaySlice
 import kr.dhl.studyapp.brief.Fmt
 import kr.dhl.studyapp.brief.Line
+import kr.dhl.studyapp.brief.Upcoming
 import kr.dhl.studyapp.data.Courses
 import kr.dhl.studyapp.data.Repo
 import kr.dhl.studyapp.i18n.L
 import kr.dhl.studyapp.i18n.tr
 import java.time.LocalDate
+import java.time.LocalDateTime
 
 /** Home-screen widget: today's classes, events and tasks. Tap to open the app. */
 class TodayWidget : GlanceAppWidget() {
@@ -63,17 +70,18 @@ class TodayWidget : GlanceAppWidget() {
         val lines = Brief.todayLines(s, repo.prefs, today)
         val overdue = Brief.overdue(s, repo.prefs, today).size
         val slice = DaySlice.of(s, today)
+        val upcoming = Brief.upcoming(s, LocalDateTime.now()).filter { !it.isDeadline }.take(1)
         val density = context.resources.displayMetrics.density
         val dark = (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         provideContent {
             // 28 dp of horizontal padding inside the widget
             val bar = SliceBitmap.render(slice, LocalSize.current.width.value - 28f, density, dark)
-            Content(today, lines, overdue, bar)
+            Content(today, lines, overdue, bar, upcoming, SliceBitmap.ring(density, dark))
         }
     }
 
     @Composable
-    private fun Content(today: LocalDate, lines: List<Line>, overdue: Int, bar: Bitmap) {
+    private fun Content(today: LocalDate, lines: List<Line>, overdue: Int, bar: Bitmap, upcoming: List<Upcoming>, ring: Bitmap) {
         Column(
             GlanceModifier.fillMaxSize().background(BG).cornerRadius(16.dp).padding(14.dp)
                 .clickable(actionStartActivity<MainActivity>()),
@@ -85,6 +93,13 @@ class TodayWidget : GlanceAppWidget() {
                     Text(tr("기한 지남 $overdue", "$overdue overdue"), style = TextStyle(color = DANGER, fontSize = 12.sp))
                 }
             }
+            upcoming.forEach { u ->
+                Row(GlanceModifier.fillMaxWidth().padding(top = 2.dp)) {
+                    Text(u.label + "  ", style = TextStyle(color = SUB, fontSize = 12.sp))
+                    Text(u.title, style = TextStyle(color = TEXT, fontSize = 12.sp), maxLines = 1, modifier = GlanceModifier.defaultWeight())
+                    Text("  " + u.note, style = TextStyle(color = ACCENT, fontSize = 12.sp))
+                }
+            }
             Spacer(GlanceModifier.height(8.dp))
             Image(ImageProvider(bar), contentDescription = null, modifier = GlanceModifier.fillMaxWidth().height(36.dp))
             Spacer(GlanceModifier.height(6.dp))
@@ -92,16 +107,30 @@ class TodayWidget : GlanceAppWidget() {
                 Text(tr("없음", "Nothing"), style = TextStyle(color = SUB, fontSize = 13.sp))
             } else {
                 LazyColumn {
-                    items(lines) { l -> LineItem(l) }
+                    items(lines) { l -> LineItem(l, ring) }
                 }
             }
         }
     }
 
     @Composable
-    private fun LineItem(l: Line) {
+    private fun LineItem(l: Line, ring: Bitmap) {
         // List rows don't pass taps to the widget's background, so each row opens the app too.
-        Row(GlanceModifier.fillMaxWidth().padding(vertical = 3.dp).clickable(actionStartActivity<MainActivity>())) {
+        Row(
+            GlanceModifier.fillMaxWidth().padding(vertical = 3.dp).clickable(actionStartActivity<MainActivity>()),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            // Task rows get a circle that completes the task.
+            if (l.taskId != null) {
+                Image(
+                    ImageProvider(ring), contentDescription = null,
+                    modifier = GlanceModifier.size(18.dp)
+                        .clickable(actionRunCallback<CompleteTask>(actionParametersOf(CompleteTask.TASK to l.taskId))),
+                )
+            } else {
+                Spacer(GlanceModifier.width(18.dp))
+            }
+            Spacer(GlanceModifier.width(8.dp))
             Text(l.time, style = TextStyle(color = SUB, fontSize = 12.sp), modifier = GlanceModifier.width(84.dp))
             Column(GlanceModifier.defaultWeight()) {
                 Text(l.title, style = TextStyle(color = TEXT, fontSize = 13.sp), maxLines = 1)
@@ -122,11 +151,25 @@ class TodayWidget : GlanceAppWidget() {
         private val TEXT = ColorProvider(day = Color(0xFF111111), night = Color(0xFFF2F2F2))
         private val SUB = ColorProvider(day = Color(0xFF6E6E73), night = Color(0xFF9A9AA0))
         private val DANGER = SolidColor(Color(0xFFE5484D))
+        private val ACCENT = ColorProvider(day = Color(0xFF3B6EF5), night = Color(0xFF6E9BFF))
 
         /** Re-renders every placed widget from the current snapshot. */
         suspend fun refresh(ctx: Context) {
             runCatching { TodayWidget().updateAll(ctx) }
         }
+    }
+}
+
+/** Completes a task from the widget; the change refreshes the widget. */
+class CompleteTask : ActionCallback {
+    override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
+        val id = parameters[TASK] ?: return
+        val repo = Repo(context)
+        repo.load().tasks.firstOrNull { it.id == id }?.let { repo.complete(it) }
+    }
+
+    companion object {
+        val TASK = ActionParameters.Key<String>("task")
     }
 }
 
