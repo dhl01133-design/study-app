@@ -221,7 +221,7 @@ fun TodoScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
     LaunchedEffect(Unit) {
         val todayBounds = snapshotFlow { targets[Drop.day(today)] }.filterNotNull().first()
         if (targets.containsKey(Drop.PAST)) {
-            val y = todayBounds.top - rootPos.y + scroll.value - with(density) { 8.dp.toPx() }
+            val y = todayBounds.top - rootPos.y + scroll.value
             scroll.scrollTo(y.roundToInt().coerceAtLeast(0))
         }
     }
@@ -314,19 +314,11 @@ fun TodoScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
     SideEffect { targets.keys.retainAll(shownKeys) }
 
     PullToRefreshBox(isRefreshing = syncing, onRefresh = onRefresh, modifier = Modifier.fillMaxSize()) {
-        Box(
-            Modifier.fillMaxSize().onGloballyPositioned {
-                rootPos = it.positionInRoot()
-                rootHeight = it.size.height.toFloat()
-            },
-        ) {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 20.dp, vertical = 12.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Header(tr("할 일", "To-do"), listOf(Pair(tr("계획", "Plan")) { startPlan() }))
-
-                OutlinedTextField(
+    Column(Modifier.fillMaxSize()) {
+        // Title, Plan and quick add stay put; the days scroll below them.
+        Column(Modifier.padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Header(tr("할 일", "To-do"), listOf(Pair(tr("계획", "Plan")) { startPlan() }))
+            OutlinedTextField(
                     newTask, { newTask = it }, Modifier.fillMaxWidth(),
                     placeholder = { Text(tr("할 일 추가", "Add task"), color = p.faint) },
                     singleLine = true,
@@ -339,7 +331,17 @@ fun TodoScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
                         focusedTextColor = p.text, unfocusedTextColor = p.text, cursorColor = p.accent,
                     ),
                 )
-
+        }
+        Box(
+            Modifier.fillMaxWidth().weight(1f).onGloballyPositioned {
+                rootPos = it.positionInRoot()
+                rootHeight = it.size.height.toFloat()
+            },
+        ) {
+            Column(
+                Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 20.dp).padding(bottom = 12.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
                 if (past.isNotEmpty()) {
                     DaySection(
                         Drop.PAST, tr("지난 날짜", "Past dates"), null, false, p.danger, onBounds,
@@ -385,6 +387,7 @@ fun TodoScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
                 ) { TaskCard(t, onCheck = null) }
             }
         }
+    }
     }
 
     detail?.let { t ->

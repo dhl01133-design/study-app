@@ -137,6 +137,8 @@ else:
 time.sleep(4)
 
 # 3c. Quick add
+start("--ei", "tab", "1")
+time.sleep(1)
 field = find(lambda t: t == "Add task" or t == "할 일 추가")
 if field:
     adb("shell", "input", "tap", str(field[1][0]), str(field[1][1]))
