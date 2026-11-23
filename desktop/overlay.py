@@ -6,7 +6,7 @@ Click-through, borderless, no taskbar entry; everything is controlled from the t
 
   StudyOverlay.exe                  normal run
   StudyOverlay.exe --demo           demo data, nothing is fetched or saved
-  StudyOverlay.exe --demo --shot a.png [--lang ko] [--text dark]   render once to a PNG and exit
+  StudyOverlay.exe --demo --shot a.png [--lang ko] [--color #222222] [--scale 1.2]   render a PNG and exit
 """
 import json
 import os
@@ -19,20 +19,22 @@ from datetime import date, datetime, timedelta
 import requests
 
 import updater
-from PySide6.QtCore import QLockFile, QObject, QPoint, QRect, Qt, QTimer, Signal
-from PySide6.QtGui import (QAction, QActionGroup, QColor, QFont, QFontMetrics, QGuiApplication, QIcon,
+from PySide6.QtCore import QLockFile, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer, Signal
+from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QGuiApplication, QIcon,
                            QLinearGradient, QPainter, QPen, QPixmap)
-from PySide6.QtWidgets import (QApplication, QCheckBox, QDialog, QDialogButtonBox, QFormLayout, QHBoxLayout,
-                               QLineEdit, QMenu, QPushButton, QSystemTrayIcon, QWidget)
+from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
+                               QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSlider,
+                               QSystemTrayIcon, QTabWidget, QVBoxLayout, QWidget)
 
 APP = "StudyOverlay"
 WIN = sys.platform == "win32"
 CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.config"), APP)
 CFG_FILE = os.path.join(CFG_DIR, "config.json")
 CACHE_FILE = os.path.join(CFG_DIR, "cache.json")
-DEFAULTS = {"todoist_token": "", "ical_url": "", "lang": "en", "corner": "bottom-right", "opacity": 0.9,
-            "on_top": True, "hide_fullscreen": True, "text": "light", "start_with_windows": False, "visible": True,
-            "github_token": "", "auto_update": True}
+DEFAULTS = {"todoist_token": "", "ical_url": "", "github_token": "", "auto_update": True, "lang": "en",
+            "text_color": "#F4F4F5", "scale": 1.0, "opacity": 0.9, "show_bar": True,
+            "corner": "bottom-right", "pos_x": 0, "pos_y": 0, "pos_anchor": "bottom",   # corner or "custom"
+            "on_top": True, "hide_fullscreen": True, "start_with_windows": False, "visible": True}
 REFRESH_MIN = 15
 
 # ---------------------------------------------------------------- language
@@ -366,89 +368,238 @@ def fullscreen_app_running():
         return False
     return state.value in (2, 3, 4)   # BUSY, RUNNING_D3D_FULL_SCREEN, PRESENTATION_MODE
 
+
+# ---------------------------------------------------------------- day slice (same rules as brief/DaySlice.kt)
+
+TRAVEL, DAY_START, DAY_END, MIN_FREE, EPS = 1.0, 9.0, 24.0, 0.5, 1e-6
+BAR_FIRST, BAR_LAST = 8.0, 24.0
+
+
+def _merge(spans):
+    out = []
+    for a, b in sorted(s for s in spans if s[1] > s[0]):
+        if out and a <= out[-1][1] + EPS:
+            out[-1] = (out[-1][0], max(out[-1][1], b))
+        else:
+            out.append((a, b))
+    return out
+
+
+def _subtract(spans, cuts):
+    for x, z in cuts:
+        spans = [p for a, b in spans for p in ([(a, b)] if z <= a or x >= b else [(a, min(b, x)), (max(a, z), b)])
+                 if p[1] - p[0] > EPS]
+    return spans
+
+
+def day_slice(snapshot, d):
+    """Blocks (start, end, title, is_class), travel spans and free spans for day d, in hours."""
+    day0 = datetime.combine(d, datetime.min.time())
+    day1 = day0 + timedelta(days=1)
+    hours = lambda t: t.hour + t.minute / 60
+    blocks = []
+    for e in (Event(x) for x in snapshot.get("events", [])):
+        if e.all_day or e.is_deadline or e.start == e.end or not e.occurs_on(d):
+            continue
+        fy, it = e.start < day0, e.end > day1
+        blocks.append(dict(a=0.0 if fy else hours(e.start), b=24.0 if it or e.end == day1 else hours(e.end),
+                           title=e.title, cls=e.is_class, fy=fy, it=it))
+    travel = []
+    classes = [b for b in blocks if b["cls"]]
+    if classes:
+        first, last = min(classes, key=lambda b: b["a"]), max(classes, key=lambda b: b["b"])
+        if not first["fy"]:
+            travel.append((first["a"] - TRAVEL, first["a"]))
+        if not last["it"]:
+            travel.append((last["b"], last["b"] + TRAVEL))
+    for b in blocks:
+        if not b["cls"]:
+            if not b["fy"]:
+                travel.append((b["a"] - TRAVEL, b["a"]))
+            if not b["it"]:
+                travel.append((b["b"], b["b"] + TRAVEL))
+    busy = _merge([(b["a"], b["b"]) for b in blocks])
+    travel_only = _merge(_subtract(_merge(travel), busy))
+    free = [s for s in _subtract([(DAY_START, DAY_END)], _merge(busy + travel_only)) if s[1] - s[0] >= MIN_FREE - EPS]
+    return blocks, travel_only, free
+
 # ---------------------------------------------------------------- overlay window
 
 
-W = 440          # logical px
+W = 440          # layout width in logical px, before the size setting
 PAD = 4
 MAX_ROWS = 16
+MARGIN = 28
+
+
+def with_alpha(c, a):
+    c = QColor(c)
+    c.setAlphaF(a)
+    return c
+
+
+def palette(cfg):
+    """Everything derives from the chosen text color; light text means a dark wallpaper."""
+    t = QColor(cfg.get("text_color") or DEFAULTS["text_color"])
+    if not t.isValid():
+        t = QColor(DEFAULTS["text_color"])
+    light = t.lightnessF() >= 0.5
+    pick = lambda on_dark, on_light: QColor(on_dark if light else on_light)
+    good = pick("#4CC98A", "#1F9D63")
+    accent = pick("#7FA6FF", "#3B6EF5")
+    return dict(
+        text=t, sub=with_alpha(t, .74), faint=with_alpha(t, .45), light=light,
+        halo=QColor(0, 0, 0, 85) if light else QColor(255, 255, 255, 90),
+        accent=accent, on_accent=pick("#0E0E10", "#FFFFFF"), danger=pick("#FF6B6E", "#D93036"),
+        p1=pick("#FF9F43", "#E8740C"), p2=accent, good=good, good_soft=with_alpha(good, .28),
+        track=with_alpha(t, .14), busy=with_alpha(t, .80), on_busy=pick("#0E0E10", "#FFFFFF"), hatch=with_alpha(t, .38),
+    )
+
+
+def course_color(c, light):
+    col = QColor(COURSE_COLORS.get(c, "#5A6270" if not light else "#B8BCC4"))
+    if light:   # lighten toward white, like the widget's night colors
+        col = QColor(int(col.red() * .5 + 127), int(col.green() * .5 + 127), int(col.blue() * .5 + 127))
+    return col
+
+
+def font(px, bold=False):
+    q = QFont()
+    q.setFamilies(["Segoe UI", "Malgun Gothic", "Noto Sans CJK KR", "Noto Sans KR"])
+    q.setPixelSize(px)
+    q.setBold(bold)
+    q.setHintingPreference(QFont.PreferNoHinting)
+    return q
 
 
 class Overlay(QWidget):
     def __init__(self, app_state):
         super().__init__()
         self.s = app_state
+        self.moving = False
+        self._drag = None
+        self.on_move_done = None
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.apply_flags()
 
     def apply_flags(self):
-        flags = (Qt.FramelessWindowHint | Qt.Tool | Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
-                 | Qt.NoDropShadowWindowHint)
-        flags |= Qt.WindowStaysOnTopHint if self.s.cfg["on_top"] else Qt.WindowStaysOnBottomHint
+        flags = Qt.FramelessWindowHint | Qt.Tool | Qt.NoDropShadowWindowHint
+        if not self.moving:   # click-through except while being moved
+            flags |= Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
+        flags |= Qt.WindowStaysOnTopHint if (self.s.cfg["on_top"] or self.moving) else Qt.WindowStaysOnBottomHint
         visible = self.isVisible()
         self.setWindowFlags(flags)
         self.setWindowOpacity(float(self.s.cfg["opacity"]))
         if visible:
             self.show()
 
-    # -- palette: light text for dark wallpapers (default) or dark text for light ones
-    def colors(self):
-        if self.s.cfg["text"] == "dark":
-            return dict(text=QColor("#111111"), sub=QColor("#4a4a50"), faint=QColor(0, 0, 0, 110), accent=QColor("#3B6EF5"),
-                        danger=QColor("#D93036"), p1=QColor("#E8740C"), p2=QColor("#3B6EF5"),
-                        halo=QColor(255, 255, 255, 70), light_course=False)
-        return dict(text=QColor("#F4F4F5"), sub=QColor("#C2C2C8"), faint=QColor(255, 255, 255, 120), accent=QColor("#7FA6FF"),
-                    danger=QColor("#FF6B6E"), p1=QColor("#FF9F43"), p2=QColor("#7FA6FF"),
-                    halo=QColor(0, 0, 0, 80), light_course=True)
+    # ---- moving
+    def set_move(self, on):
+        if on == self.moving:
+            return
+        self.moving = on
+        self.apply_flags()
+        self.show()
+        if on:
+            self.raise_()
+            self.activateWindow()
+            self.setFocus()
+            self.setCursor(Qt.SizeAllCursor)
+        else:
+            self.unsetCursor()
+            if self.on_move_done:
+                self.on_move_done()
+        self.update()
 
-    def course_color(self, c, light):
-        col = QColor(COURSE_COLORS.get(c, "#5A6270" if not light else "#B8BCC4"))
-        if light:   # lighten toward white, like the widget's night colors
-            col = QColor(int(col.red() * .5 + 127), int(col.green() * .5 + 127), int(col.blue() * .5 + 127))
-        return col
+    def mousePressEvent(self, e):
+        if self.moving and e.button() == Qt.LeftButton:
+            self._drag = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
 
-    def fonts(self):
-        def f(px, bold=False):
-            q = QFont()
-            q.setFamilies(["Segoe UI", "Malgun Gothic", "Noto Sans CJK KR", "Noto Sans KR"])
-            q.setPixelSize(px)
-            q.setBold(bold)
-            q.setHintingPreference(QFont.PreferNoHinting)
-            return q
-        return f(26, True), f(15), f(14), f(12)
+    def mouseMoveEvent(self, e):
+        if self.moving and self._drag is not None:
+            self.move(self.clamp(e.globalPosition().toPoint() - self._drag))
+
+    def mouseReleaseEvent(self, e):
+        if self.moving and self._drag is not None:
+            self._drag = None
+            self.remember_position()
+
+    def mouseDoubleClickEvent(self, e):
+        if self.moving:
+            self.set_move(False)
+
+    def keyPressEvent(self, e):
+        if self.moving and e.key() in (Qt.Key_Escape, Qt.Key_Return, Qt.Key_Enter):
+            self.set_move(False)
+
+    def screen_rect(self):
+        return QGuiApplication.primaryScreen().availableGeometry()
+
+    def clamp(self, pt):
+        r = self.screen_rect()
+        return QPoint(min(max(pt.x(), r.left()), r.right() - self.width() + 1),
+                      min(max(pt.y(), r.top()), r.bottom() - self.height() + 1))
+
+    def remember_position(self):
+        """Saves the dragged position relative to the nearest top or bottom edge, so a growing list stays on screen."""
+        r = self.screen_rect()
+        g = self.frameGeometry()
+        bottom_half = g.center().y() > r.center().y()
+        self.s.cfg.update(corner="custom", pos_x=g.left() - r.left(),
+                          pos_anchor="bottom" if bottom_half else "top",
+                          pos_y=(r.bottom() - g.bottom()) if bottom_half else (g.top() - r.top()))
+        self.s.save_cfg()
+
+    # ---- layout
+    def scale(self):
+        return max(0.6, min(2.0, float(self.s.cfg.get("scale", 1.0))))
 
     def layout_height(self):
         rows, _, up = self.s.view()
-        n = min(len(rows), MAX_ROWS) + (1 if len(rows) > MAX_ROWS else 0)
-        n = max(n, 1)
-        return PAD + 38 + len(up) * 22 + 10 + n * 25 + (22 if self.s.status() else 0) + PAD
+        n = max(min(len(rows), MAX_ROWS) + (1 if len(rows) > MAX_ROWS else 0), 1)
+        bar = 48 if self.s.cfg.get("show_bar", True) else 0
+        return PAD + 38 + len(up) * 22 + bar + 10 + n * 25 + (22 if self.s.status() else 0) + PAD
 
     def place(self):
-        h = self.layout_height()
-        self.resize(W, h)
-        scr = QGuiApplication.primaryScreen().availableGeometry()
-        m = 28
-        corner = self.s.cfg["corner"]
-        x = scr.right() - W - m if "right" in corner else scr.left() + m
-        y = scr.bottom() - h - m if "bottom" in corner else scr.top() + m
-        self.move(QPoint(x, y))
+        k = self.scale()
+        w, h = int(W * k + 1), int(self.layout_height() * k + 1)
+        self.resize(w, h)
+        if self._drag is not None:
+            return
+        r = self.screen_rect()
+        c = self.s.cfg
+        if c["corner"] == "custom":
+            x = r.left() + int(c["pos_x"])
+            y = r.bottom() - h + 1 - int(c["pos_y"]) if c["pos_anchor"] == "bottom" else r.top() + int(c["pos_y"])
+        else:
+            x = r.right() - w + 1 - MARGIN if "right" in c["corner"] else r.left() + MARGIN
+            y = r.bottom() - h + 1 - MARGIN if "bottom" in c["corner"] else r.top() + MARGIN
+        self.move(self.clamp(QPoint(x, y)))
 
+    # ---- drawing
     def paintEvent(self, _):
         p = QPainter(self)
+        p.scale(self.scale(), self.scale())
         self.paint(p)
         p.end()
 
     def paint(self, p):
         p.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
-        c = self.colors()
-        f_head, f_row, f_up, f_small = self.fonts()
+        c = palette(self.s.cfg)
+        f_head, f_row, f_up, f_small, f_bar = font(26, True), font(15), font(14), font(12), font(10)
         rows, overdue, upcoming = self.s.view()
         right = W - PAD
+        now = self.s.now()
 
-        def text(x, y, s, font, color, width=None, align=Qt.AlignLeft):
-            p.setFont(font)
-            fm = QFontMetrics(font)
+        if self.moving:   # visible frame so there's something to grab
+            p.setPen(QPen(c["accent"], 1.5, Qt.DashLine))
+            p.setBrush(with_alpha(c["accent"], .12))
+            p.drawRoundedRect(QRectF(1, 1, W - 2, self.layout_height() - 2), 10, 10)
+
+        def text(x, y, s, fnt, color, width=None, align=Qt.AlignLeft):
+            p.setFont(fnt)
+            fm = QFontMetrics(fnt)
             if width is not None:
                 s = fm.elidedText(s, Qt.ElideRight, int(width))
             w = width if width is not None else fm.horizontalAdvance(s) + 2
@@ -461,7 +612,7 @@ class Overlay(QWidget):
             return fm.horizontalAdvance(s)
 
         y = PAD
-        text(PAD, y, day_label(self.s.now().date()), f_head, c["text"])
+        text(PAD, y, day_label(now.date()), f_head, c["text"])
         if overdue:
             text(PAD, y + 6, tr(f"기한 지남 {overdue}", f"{overdue} overdue"), f_row, c["danger"], right - PAD, Qt.AlignRight)
         y += 38
@@ -471,31 +622,30 @@ class Overlay(QWidget):
             text(x, y, title, f_up, c["text"], right - x - nw - 10)
             text(right - nw, y, note, f_up, c["accent"], nw, Qt.AlignRight)
             y += 22
+
+        if self.s.cfg.get("show_bar", True):
+            self.paint_bar(p, c, PAD, y + 8, right - PAD, now, f_bar, text)
+            y += 48
         y += 10
 
         if not rows:
             text(PAD + 22, y, tr("없음", "Nothing"), f_row, c["sub"])
             y += 25
         for r in rows[:MAX_ROWS]:
-            # priority circle for tasks: orange p1, blue p2, plain otherwise
-            if r.kind in ("task", "overdue"):
+            if r.kind in ("task", "overdue"):   # priority circle: orange p1, blue p2
                 ring = c["p1"] if r.priority == 4 else c["p2"] if r.priority == 3 else c["sub"]
-                p.setPen(QPen(c["halo"], 3.2))
                 p.setBrush(Qt.NoBrush)
+                p.setPen(QPen(c["halo"], 3.2))
                 p.drawEllipse(PAD + 2, y + 6, 12, 12)
                 p.setPen(QPen(ring, 1.6))
                 p.drawEllipse(PAD + 2, y + 6, 12, 12)
-            faint = r.past
-            tcol = c["danger"] if r.kind in ("overdue", "deadline") else c["faint"] if faint else c["sub"]
+            tcol = c["danger"] if r.kind in ("overdue", "deadline") else c["faint"] if r.past else c["sub"]
             text(PAD + 24, y, r.time, f_row, tcol, 92)
             x = PAD + 24 + 100
-            cw = 0
+            cw = min(QFontMetrics(f_small).horizontalAdvance(r.course) + 4, 130) if r.course else 0
+            tw = text(x, y, r.title, f_row, c["faint"] if r.past else c["text"], right - x - (cw + 10 if cw else 0))
             if r.course:
-                cw = min(QFontMetrics(f_small).horizontalAdvance(r.course) + 4, 130)
-            tw = text(x, y, r.title, f_row, c["faint"] if faint else c["text"], right - x - (cw + 10 if cw else 0))
-            if r.course:
-                col = c["faint"] if faint else self.course_color(r.course, c["light_course"])
-                text(x + tw + 10, y + 1, r.course, f_small, col, cw)
+                text(x + tw + 10, y + 1, r.course, f_small, c["faint"] if r.past else course_color(r.course, c["light"]), cw)
             y += 25
         if len(rows) > MAX_ROWS:
             text(PAD + 124, y, tr(f"외 {len(rows) - MAX_ROWS}개", f"+{len(rows) - MAX_ROWS} more"), f_row, c["sub"])
@@ -504,31 +654,173 @@ class Overlay(QWidget):
         if st:
             text(PAD + 124, y, st, f_small, c["sub"], right - PAD - 124)
 
-# ---------------------------------------------------------------- settings dialog
+    def paint_bar(self, p, c, x0, y0, w, now, f_bar, text):
+        """Today's time bar, 08–24, like the widget: classes blue, other events solid, travel hatched, free green."""
+        blocks, travel, free = day_slice(self.s.snap, now.date())
+        bh, r = 22, 4
+        x = lambda h: x0 + (min(max(h, BAR_FIRST), BAR_LAST) - BAR_FIRST) / (BAR_LAST - BAR_FIRST) * w
+        p.setPen(Qt.NoPen)
+        p.setBrush(c["track"])
+        p.drawRoundedRect(QRectF(x0, y0, w, bh), r, r)
+
+        p.setPen(QPen(c["hatch"], 1))
+        for a, b in travel:
+            if b <= BAR_FIRST:
+                continue
+            p.save()
+            p.setClipRect(QRectF(x(a), y0, x(b) - x(a), bh))
+            lx = x(a) - bh
+            while lx < x(b):
+                p.drawLine(QPointF(lx, y0 + bh), QPointF(lx + bh, y0))
+                lx += 5
+            p.restore()
+
+        for a, b in free:
+            p.setPen(QPen(c["good"], 1))
+            p.setBrush(c["good_soft"])
+            p.drawRoundedRect(QRectF(x(a) + 1, y0 + 1, max(x(b) - x(a) - 2, 1), bh - 2), r, r)
+
+        p.setFont(f_bar)
+        fm = QFontMetrics(f_bar)
+        for b in blocks:
+            if b["b"] <= BAR_FIRST:
+                continue
+            left, rt = x(b["a"]), max(x(b["b"]), x(b["a"]) + 1)
+            p.setPen(Qt.NoPen)
+            p.setBrush(c["accent"] if b["cls"] else c["busy"])
+            p.drawRoundedRect(QRectF(left, y0, rt - left, bh), r, r)
+            if rt - left > 22:
+                p.setPen(c["on_accent"] if b["cls"] else c["on_busy"])
+                p.drawText(QRectF(left + 3, y0, rt - left - 5, bh), Qt.AlignVCenter | Qt.AlignLeft,
+                           fm.elidedText(b["title"], Qt.ElideRight, int(rt - left - 5)))
+
+        hnow = now.hour + now.minute / 60
+        if BAR_FIRST <= hnow <= BAR_LAST:
+            p.setPen(QPen(c["accent"], 2))
+            p.drawLine(QPointF(x(hnow), y0 - 2), QPointF(x(hnow), y0 + bh + 2))
+
+        for hr in range(8, 25, 4):
+            hx = min(max(x(hr), x0 + 7), x0 + w - 7)
+            text(hx - 12, y0 + bh + 2, f"{hr % 24:02d}", f_bar, c["faint"], 24, Qt.AlignHCenter)
+
+# ---------------------------------------------------------------- settings window
 
 
 class Settings(QDialog):
-    def __init__(self, cfg):
+    """Non-modal, so the overlay can be dragged while it's open. Appearance changes preview live; Cancel undoes them."""
+
+    def __init__(self, st, apply):
         super().__init__()
+        self.st, self.apply = st, apply
+        self.original = dict(st.cfg)
         self.setWindowTitle(tr("설정", "Settings"))
-        self.setMinimumWidth(520)
-        form = QFormLayout(self)
-        self.token = self.secret(cfg["todoist_token"])
-        self.ical = self.secret(cfg["ical_url"])
-        form.addRow(tr("Todoist 토큰", "Todoist token"), self.token[0])
-        form.addRow(tr("캘린더 iCal 주소", "Calendar iCal address"), self.ical[0])
-        self.gh = self.secret(cfg.get("github_token", ""))
-        form.addRow(tr("업데이트용 GitHub 토큰", "GitHub token (updates)"), self.gh[0])
-        self.upd = QCheckBox(tr("자동 업데이트", "Update automatically"))
-        self.upd.setChecked(cfg.get("auto_update", True))
-        form.addRow("", self.upd)
-        self.auto = QCheckBox(tr("Windows 시작 시 실행", "Start with Windows"))
-        self.auto.setChecked(autostart_registered())
-        form.addRow("", self.auto)
+        self.setMinimumWidth(540)
+        tabs = QTabWidget()
+        tabs.addTab(self.appearance(), tr("모양", "Appearance"))
+        tabs.addTab(self.behavior(), tr("동작", "Behavior"))
+        tabs.addTab(self.accounts(), tr("계정", "Accounts"))
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
         bb.rejected.connect(self.reject)
-        form.addRow(bb)
+        lay = QVBoxLayout(self)
+        lay.addWidget(tabs)
+        lay.addWidget(bb)
+
+    def live(self, **kw):
+        self.st.cfg.update(kw)
+        self.apply()
+
+    # ---- tabs
+    def appearance(self):
+        w = QWidget()
+        form = QFormLayout(w)
+
+        self.color_btn = QPushButton()
+        self.color_btn.clicked.connect(self.pick_color)
+        reset = QPushButton(tr("기본값", "Default"))
+        reset.clicked.connect(lambda: self.set_color(DEFAULTS["text_color"]))
+        row = QHBoxLayout()
+        row.addWidget(self.color_btn, 1)
+        row.addWidget(reset)
+        form.addRow(tr("글자색", "Text color"), row)
+        self.set_color(self.st.cfg["text_color"], live=False)
+
+        self.size = self.slider(60, 200, int(round(self.st.cfg["scale"] * 100)), lambda v: self.live(scale=v / 100), "%")
+        form.addRow(tr("크기", "Size"), self.size)
+        self.opacity = self.slider(25, 100, int(round(self.st.cfg["opacity"] * 100)), lambda v: self.live(opacity=v / 100), "%")
+        form.addRow(tr("불투명도", "Opacity"), self.opacity)
+
+        self.corner = QComboBox()
+        self.corners = [("top-left", tr("왼쪽 위", "Top left")), ("top-right", tr("오른쪽 위", "Top right")),
+                        ("bottom-left", tr("왼쪽 아래", "Bottom left")), ("bottom-right", tr("오른쪽 아래", "Bottom right")),
+                        ("custom", tr("직접 지정", "Custom"))]
+        for _, name in self.corners:
+            self.corner.addItem(name)
+        self.sync_corner()
+        self.corner.currentIndexChanged.connect(lambda i: self.live(corner=self.corners[i][0]))
+        move = QPushButton(tr("끌어서 옮기기", "Drag to move"))
+        move.clicked.connect(self.start_move)
+        row = QHBoxLayout()
+        row.addWidget(self.corner, 1)
+        row.addWidget(move)
+        form.addRow(tr("위치", "Position"), row)
+
+        self.bar = QCheckBox(tr("오늘 시간 막대", "Today's time bar"))
+        self.bar.setChecked(self.st.cfg.get("show_bar", True))
+        self.bar.toggled.connect(lambda v: self.live(show_bar=v))
+        form.addRow("", self.bar)
+        return w
+
+    def behavior(self):
+        w = QWidget()
+        form = QFormLayout(w)
+        self.lang = QComboBox()
+        self.lang.addItems(["English", "한국어"])
+        self.lang.setCurrentIndex(1 if self.st.cfg["lang"] == "ko" else 0)
+        self.lang.currentIndexChanged.connect(lambda i: self.live(lang="ko" if i else "en"))
+        form.addRow(tr("언어", "Language"), self.lang)
+        self.on_top = self.check(tr("항상 위에", "Always on top"), "on_top", form)
+        self.hide_fs = self.check(tr("전체 화면일 때 숨기기", "Hide in full screen"), "hide_fullscreen", form)
+        self.auto = QCheckBox(tr("Windows 시작 시 실행", "Start with Windows"))
+        self.auto.setChecked(autostart_registered())
+        form.addRow("", self.auto)
+        return w
+
+    def accounts(self):
+        w = QWidget()
+        form = QFormLayout(w)
+        self.token = self.secret(self.st.cfg["todoist_token"])
+        self.ical = self.secret(self.st.cfg["ical_url"])
+        self.gh = self.secret(self.st.cfg.get("github_token", ""))
+        form.addRow(tr("Todoist 토큰", "Todoist token"), self.token[0])
+        form.addRow(tr("캘린더 iCal 주소", "Calendar iCal address"), self.ical[0])
+        form.addRow(tr("GitHub 토큰", "GitHub token"), self.gh[0])
+        self.upd = QCheckBox(tr("자동 업데이트", "Update automatically"))
+        self.upd.setChecked(self.st.cfg.get("auto_update", True))
+        form.addRow("", self.upd)
+        return w
+
+    # ---- controls
+    def slider(self, lo, hi, val, on_change, unit):
+        box = QWidget()
+        lay = QHBoxLayout(box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        s = QSlider(Qt.Horizontal)
+        s.setRange(lo, hi)
+        s.setValue(val)
+        lab = QLabel(f"{val}{unit}")
+        lab.setMinimumWidth(44)
+        s.valueChanged.connect(lambda v: (lab.setText(f"{v}{unit}"), on_change(v)))
+        lay.addWidget(s, 1)
+        lay.addWidget(lab)
+        return box
+
+    def check(self, title, key, form):
+        b = QCheckBox(title)
+        b.setChecked(self.st.cfg[key])
+        b.toggled.connect(lambda v: self.live(**{key: v}))
+        form.addRow("", b)
+        return b
 
     def secret(self, value):
         box = QWidget()
@@ -548,11 +840,34 @@ class Settings(QDialog):
         lay.addWidget(b)
         return box, e
 
+    def set_color(self, hexstr, live=True):
+        col = QColor(hexstr)
+        pm = QPixmap(14, 14)
+        pm.fill(col)
+        self.color_btn.setIcon(QIcon(pm))
+        self.color_btn.setText(col.name().upper())
+        if live:
+            self.live(text_color=col.name())
+
+    def pick_color(self):
+        col = QColorDialog.getColor(QColor(self.st.cfg["text_color"]), self, tr("글자색", "Text color"))
+        if col.isValid():
+            self.set_color(col.name())
+
+    def sync_corner(self):
+        keys = [k for k, _ in self.corners]
+        self.corner.blockSignals(True)
+        self.corner.setCurrentIndex(keys.index(self.st.cfg["corner"]) if self.st.cfg["corner"] in keys else 3)
+        self.corner.blockSignals(False)
+
+    def start_move(self):
+        self.st.start_move()
+
     def values(self):
         clean = lambda s: s.strip().strip("'\"").replace(" ", "")
         return {"todoist_token": clean(self.token[1].text()), "ical_url": clean(self.ical[1].text()),
-                "github_token": clean(self.gh[1].text()), "start_with_windows": self.auto.isChecked(),
-                "auto_update": self.upd.isChecked()}
+                "github_token": clean(self.gh[1].text()), "auto_update": self.upd.isChecked(),
+                "start_with_windows": self.auto.isChecked()}
 
 # ---------------------------------------------------------------- app
 
@@ -568,9 +883,12 @@ class State:
         self.demo = demo
         self.fixed_now = fixed_now
         self.cfg = dict(DEFAULTS) if demo else load_json(CFG_FILE, DEFAULTS)
+        if self.cfg.get("text") == "dark" and self.cfg["text_color"] == DEFAULTS["text_color"]:
+            self.cfg["text_color"] = "#111111"   # build 1–3 setting
         LANG["en"] = self.cfg["lang"] != "ko"
         self.snap = demo_snapshot() if demo else load_json(CACHE_FILE, {"fetched": 0, "tasks": [], "events": [], "errors": []})
         self.busy = False
+        self.start_move = lambda: None
 
     def now(self):
         return self.fixed_now or datetime.now()
@@ -578,15 +896,17 @@ class State:
     def view(self):
         return build(self.snap, self.now())
 
+    def save_cfg(self):
+        if not self.demo:
+            save_json(CFG_FILE, self.cfg)
+
     def status(self):
         if self.demo:
             return ""
         if not self.cfg["todoist_token"] and not self.cfg["ical_url"]:
             return tr("트레이 아이콘 → 설정", "Tray icon → Settings")
         errs = self.snap.get("errors") or []
-        if errs:
-            return "; ".join(errs)[:120]
-        return ""
+        return "; ".join(errs)[:120] if errs else ""
 
 
 def fetch_all(cfg, today):
@@ -621,17 +941,17 @@ def tray_icon():
 def render_shot(state, path):
     ov = Overlay(state)
     h = ov.layout_height()
-    scale = 2
-    pm = QPixmap(W * scale + 80, h * scale + 80)
+    k = 2 * ov.scale()
+    pm = QPixmap(int(W * k) + 80, int(h * k) + 80)
     g = QLinearGradient(0, 0, pm.width(), pm.height())
-    if state.cfg["text"] == "dark":
-        g.setColorAt(0, QColor("#dfe6ee")); g.setColorAt(1, QColor("#f4efe6"))
-    else:
+    if palette(state.cfg)["light"]:
         g.setColorAt(0, QColor("#1e2a3a")); g.setColorAt(1, QColor("#4b5d4a"))
+    else:
+        g.setColorAt(0, QColor("#dfe6ee")); g.setColorAt(1, QColor("#f4efe6"))
     p = QPainter(pm)
     p.fillRect(pm.rect(), g)
     p.translate(40, 40)
-    p.scale(scale, scale)
+    p.scale(k, k)
     p.setOpacity(float(state.cfg["opacity"]))
     ov.paint(p)
     p.end()
@@ -647,12 +967,15 @@ def main():
 
     if "--shot" in args:
         st = State(demo=True, fixed_now=datetime.combine(date.today(), datetime.min.time()).replace(hour=11, minute=20))
-        if "--lang" in args:
-            st.cfg["lang"] = args[args.index("--lang") + 1]
+        arg = lambda k: args[args.index(k) + 1] if k in args else None
+        if arg("--lang"):
+            st.cfg["lang"] = arg("--lang")
             LANG["en"] = st.cfg["lang"] != "ko"
-        if "--text" in args:
-            st.cfg["text"] = args[args.index("--text") + 1]
-        render_shot(st, args[args.index("--shot") + 1])
+        if arg("--color"):
+            st.cfg["text_color"] = arg("--color")
+        if arg("--scale"):
+            st.cfg["scale"] = float(arg("--scale"))
+        render_shot(st, arg("--shot"))
         return 0
 
     if not demo:
@@ -667,6 +990,7 @@ def main():
     ov = Overlay(st)
     bus = Bus()
     last_day = [st.now().date()]
+    dialog = [None]
 
     def refresh():
         ov.place()
@@ -691,25 +1015,64 @@ def main():
         cfg, today = dict(st.cfg), st.now().date()
         threading.Thread(target=lambda: bus.fetched.emit(fetch_all(cfg, today)), daemon=True).start()
 
-    def save_cfg():
-        if not st.demo:
-            save_json(CFG_FILE, st.cfg)
+    def apply_cfg():
+        LANG["en"] = st.cfg["lang"] != "ko"
+        build_menu()
+        ov.apply_flags()
+        refresh()
+        visibility()
 
+    # ---- moving
+    def start_move():
+        st.cfg["visible"] = True
+        visibility()
+        ov.set_move(True)
+        build_menu()
+
+    def move_done():
+        build_menu()
+        if dialog[0]:
+            dialog[0].sync_corner()
+    st.start_move = start_move
+    ov.on_move_done = move_done
+
+    # ---- settings
     def open_settings():
-        dlg = Settings(st.cfg)
-        before = autostart_registered()
-        if dlg.exec():
+        if dialog[0]:
+            dialog[0].raise_()
+            dialog[0].activateWindow()
+            return
+        dlg = Settings(st, apply_cfg)
+        dialog[0] = dlg
+        before_auto = autostart_registered()
+        before_accounts = (st.cfg["todoist_token"], st.cfg["ical_url"], st.cfg.get("github_token"))
+
+        def done(ok):
+            dialog[0] = None
+            ov.set_move(False)
+            if not ok:
+                st.cfg.clear()
+                st.cfg.update(dlg.original)   # Cancel undoes every preview, including a drag
+                st.save_cfg()
+                apply_cfg()
+                return
             st.cfg.update(dlg.values())
-            save_cfg()
-            if st.cfg["start_with_windows"] != before:   # touch the registry only on an explicit change
+            st.save_cfg()
+            if st.cfg["start_with_windows"] != before_auto:   # touch the registry only on an explicit change
                 try:
                     set_autostart(st.cfg["start_with_windows"])
                 except Exception:
                     pass
-            sync()
-            check_updates()
+            apply_cfg()
+            if (st.cfg["todoist_token"], st.cfg["ical_url"], st.cfg.get("github_token")) != before_accounts:
+                sync()
+                check_updates()
+        dlg.finished.connect(lambda r: done(r == QDialog.Accepted))
+        dlg.show()
+        dlg.raise_()
+        dlg.activateWindow()
 
-    # tray menu
+    # ---- updates
     tray = QSystemTrayIcon(tray_icon())
     tray.setToolTip(f"Study Overlay build {updater.BUILD}")
 
@@ -719,7 +1082,7 @@ def main():
             return
         if not tok:
             if manual:
-                tray.showMessage("Study Overlay", tr("설정에 GitHub 토큰을 입력하세요", "Add a GitHub token in Settings"))
+                tray.showMessage("Study Overlay", tr("설정 → 계정에 GitHub 토큰을 입력하세요", "Add a GitHub token in Settings → Accounts"))
             return
 
         def work():
@@ -760,47 +1123,20 @@ def main():
         app.quit()
     bus.update.connect(on_update)
     bus.installed.connect(on_installed)
+
+    # ---- tray menu
     menu = QMenu()
 
     def build_menu():
         menu.clear()
         menu.addAction(tr("동기화", "Sync"), sync)
         shown = QAction(tr("표시", "Show"), menu, checkable=True, checked=st.cfg.get("visible", True))
-        shown.toggled.connect(lambda v: (st.cfg.__setitem__("visible", v), save_cfg(), visibility()))
+        shown.toggled.connect(lambda v: (st.cfg.__setitem__("visible", v), st.save_cfg(), visibility()))
         menu.addAction(shown)
-        menu.addSeparator()
-
-        def radio(title, key, options):
-            sub = menu.addMenu(title)
-            grp = QActionGroup(sub)
-            for val, name in options:
-                a = QAction(name, sub, checkable=True, checked=st.cfg[key] == val)
-                a.triggered.connect(lambda _=False, v=val: choose(key, v))
-                grp.addAction(a)
-                sub.addAction(a)
-
-        def choose(key, v):
-            st.cfg[key] = v
-            save_cfg()
-            if key == "lang":
-                LANG["en"] = v != "ko"
-                build_menu()
-            ov.apply_flags()
-            refresh()
-
-        radio(tr("위치", "Position"), "corner", [("top-left", tr("왼쪽 위", "Top left")), ("top-right", tr("오른쪽 위", "Top right")),
-                                                 ("bottom-left", tr("왼쪽 아래", "Bottom left")), ("bottom-right", tr("오른쪽 아래", "Bottom right"))])
-        radio(tr("투명도", "Opacity"), "opacity", [(1.0, "100%"), (0.9, "90%"), (0.75, "75%"), (0.6, "60%"), (0.45, "45%")])
-        radio(tr("글자색", "Text"), "text", [("light", tr("밝게 (어두운 배경화면)", "Light (dark wallpaper)")),
-                                            ("dark", tr("어둡게 (밝은 배경화면)", "Dark (light wallpaper)"))])
-        radio(tr("언어", "Language"), "lang", [("en", "English"), ("ko", "한국어")])
-
-        def check(title, key, after=None):
-            a = QAction(title, menu, checkable=True, checked=st.cfg[key])
-            a.toggled.connect(lambda v: (st.cfg.__setitem__(key, v), save_cfg(), after and after()))
-            menu.addAction(a)
-        check(tr("항상 위에", "Always on top"), "on_top", lambda: (ov.apply_flags(), refresh()))
-        check(tr("전체 화면일 때 숨기기", "Hide in full screen"), "hide_fullscreen", lambda: visibility())
+        if ov.moving:
+            menu.addAction(tr("옮기기 완료", "Done moving"), lambda: ov.set_move(False))
+        else:
+            menu.addAction(tr("옮기기", "Move"), start_move)
         menu.addSeparator()
         menu.addAction(tr("업데이트 확인", "Check for updates"), lambda: check_updates(True))
         menu.addAction(tr("설정", "Settings"), open_settings)
@@ -811,14 +1147,14 @@ def main():
     tray.show()
 
     def visibility():
-        want = st.cfg.get("visible", True) and not (st.cfg["hide_fullscreen"] and fullscreen_app_running())
+        want = ov.moving or (st.cfg.get("visible", True) and not (st.cfg["hide_fullscreen"] and fullscreen_app_running()))
         if want and not ov.isVisible():
             refresh()
             ov.show()
         elif not want and ov.isVisible():
             ov.hide()
 
-    def tick():   # every 30 s: redraw (Now/Next, past events), day rollover
+    def tick():   # every 30 s: redraw (Now/Next, time bar, past events), day rollover
         d = st.now().date()
         if d != last_day[0]:
             last_day[0] = d

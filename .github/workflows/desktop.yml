@@ -27,7 +27,7 @@ jobs:
         shell: pwsh
         run: |
           $exe = "desktop/dist/StudyOverlay.exe"
-          foreach ($a in @("--shot shot_en.png", "--shot shot_ko_dark.png --lang ko --text dark")) {
+          foreach ($a in @("--shot shot_en.png", "--shot shot_ko_dark.png --lang ko --color #1f2a44")) {
             $p = Start-Process $exe -ArgumentList "--demo $a" -PassThru -Wait
             if ($p.ExitCode -ne 0) { throw "exit $($p.ExitCode) for $a" }
           }

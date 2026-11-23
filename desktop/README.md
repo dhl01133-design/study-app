@@ -1,8 +1,11 @@
 # Study Overlay (Windows)
 
 Today's list from the Android app's widget, drawn on the main monitor like a watermark:
-borderless, click-through, no taskbar entry. Controlled from the tray icon (Sync, Show, Position,
-Opacity, Text, Language, Always on top, Hide in full screen, Settings, Quit).
+borderless, click-through, no taskbar entry, with the widget's 08–24 time bar. Tray icon: Sync, Show,
+Move (drag it; double-click, Enter or Esc to finish), Check for updates, Settings, Quit. Settings has
+three tabs: Appearance (text color, size, opacity, position + Drag to move, time bar), Behavior
+(language, always on top, hide in full screen, start with Windows) and Accounts (tokens, auto-update).
+Appearance changes preview live; Cancel undoes them.
 
 - Same sources as the phone: Todoist personal token + Google Calendar secret iCal address (Settings).
 - Rows: overdue tasks (real deadline passed), today's events, tasks planned for earlier days that are
@@ -12,7 +15,7 @@ Opacity, Text, Language, Always on top, Hide in full screen, Settings, Quit).
 
 Built by `.github/workflows/desktop.yml` on windows-latest (PyInstaller, one file) and published as the
 release `desktop` (`StudyOverlay.exe` plus two demo screenshots). Local preview on Linux:
-`QT_QPA_PLATFORM=offscreen python3 overlay.py --demo --shot out.png [--lang ko] [--text dark]`.
+`QT_QPA_PLATFORM=offscreen python3 overlay.py --demo --shot out.png [--lang ko] [--color #1f2a44] [--scale 1.2]`.
 
 Updates (`updater.py`): the exe runs wherever it is kept. It never copies itself, and it only writes
 the HKCU Run key when the user ticks "Start with Windows" in Settings. AhnLab flagged the earlier
