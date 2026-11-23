@@ -20,7 +20,9 @@ jobs:
       - run: pip install -r desktop/requirements.txt
       - name: Build StudyOverlay.exe
         working-directory: desktop
-        run: pyinstaller --onefile --noconsole --name StudyOverlay --exclude-module tkinter overlay.py
+        run: |
+          echo "BUILD = ${{ github.run_number }}" > build_info.py
+          pyinstaller --onefile --noconsole --name StudyOverlay --exclude-module tkinter overlay.py
       - name: Smoke test (render demo screenshots)
         shell: pwsh
         run: |

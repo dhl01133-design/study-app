@@ -17,6 +17,8 @@ import time
 from datetime import date, datetime, timedelta
 
 import requests
+
+import updater
 from PySide6.QtCore import QLockFile, QObject, QPoint, QRect, Qt, QTimer, Signal
 from PySide6.QtGui import (QAction, QActionGroup, QColor, QFont, QFontMetrics, QGuiApplication, QIcon,
                            QLinearGradient, QPainter, QPen, QPixmap)
@@ -29,7 +31,8 @@ CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.confi
 CFG_FILE = os.path.join(CFG_DIR, "config.json")
 CACHE_FILE = os.path.join(CFG_DIR, "cache.json")
 DEFAULTS = {"todoist_token": "", "ical_url": "", "lang": "en", "corner": "bottom-right", "opacity": 0.9,
-            "on_top": True, "hide_fullscreen": True, "text": "light", "autostart": True, "visible": True}
+            "on_top": True, "hide_fullscreen": True, "text": "light", "autostart": True, "visible": True,
+            "github_token": "", "auto_update": True}
 REFRESH_MIN = 15
 
 # ---------------------------------------------------------------- language
@@ -498,6 +501,11 @@ class Settings(QDialog):
         self.ical = self.secret(cfg["ical_url"])
         form.addRow(tr("Todoist 토큰", "Todoist token"), self.token[0])
         form.addRow(tr("캘린더 iCal 주소", "Calendar iCal address"), self.ical[0])
+        self.gh = self.secret(cfg.get("github_token", ""))
+        form.addRow(tr("업데이트용 GitHub 토큰", "GitHub token (updates)"), self.gh[0])
+        self.upd = QCheckBox(tr("자동 업데이트", "Update automatically"))
+        self.upd.setChecked(cfg.get("auto_update", True))
+        form.addRow("", self.upd)
         self.auto = QCheckBox(tr("Windows 시작 시 실행", "Start with Windows"))
         self.auto.setChecked(cfg["autostart"])
         form.addRow("", self.auto)
@@ -527,13 +535,16 @@ class Settings(QDialog):
     def values(self):
         clean = lambda s: s.strip().strip("'\"").replace(" ", "")
         return {"todoist_token": clean(self.token[1].text()), "ical_url": clean(self.ical[1].text()),
-                "autostart": self.auto.isChecked()}
+                "github_token": clean(self.gh[1].text()), "autostart": self.auto.isChecked(),
+                "auto_update": self.upd.isChecked()}
 
 # ---------------------------------------------------------------- app
 
 
 class Bus(QObject):
     fetched = Signal(dict)
+    update = Signal(object, bool)     # (build, asset_id, size) or error text, manual?
+    installed = Signal(object)        # path to start, or error text
 
 
 class State:
@@ -634,6 +645,16 @@ def main():
         if not lock.tryLock(100):
             return 0
         app._lock = lock
+        try:
+            if updater.ensure_installed():   # first run of a downloaded exe: copy, start the installed one
+                lock.unlock()
+                return 0
+        except Exception:
+            pass   # keep running from where it is
+        try:
+            set_autostart(load_json(CFG_FILE, DEFAULTS)["autostart"])
+        except Exception:
+            pass
 
     st = State(demo=demo)
     ov = Overlay(st)
@@ -677,10 +698,59 @@ def main():
             except Exception:
                 pass
             sync()
+            check_updates()
 
     # tray menu
     tray = QSystemTrayIcon(tray_icon())
-    tray.setToolTip("Study Overlay")
+    tray.setToolTip(f"Study Overlay build {updater.BUILD}")
+
+    def check_updates(manual=False):
+        tok = st.cfg.get("github_token", "")
+        if st.demo or not updater.FROZEN:
+            return
+        if not tok:
+            if manual:
+                tray.showMessage("Study Overlay", tr("설정에 GitHub 토큰을 입력하세요", "Add a GitHub token in Settings"))
+            return
+
+        def work():
+            try:
+                bus.update.emit(updater.check(tok), manual)
+            except Exception as e:
+                bus.update.emit(str(e), manual)
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_update(res, manual):
+        if isinstance(res, str):
+            if manual:
+                tray.showMessage("Study Overlay", res)
+            return
+        build_no, asset_id, size = res
+        if build_no <= updater.BUILD:
+            if manual:
+                tray.showMessage("Study Overlay", tr(f"최신 버전 (build {updater.BUILD})", f"Up to date (build {updater.BUILD})"))
+            return
+        if not (manual or st.cfg.get("auto_update", True)):
+            return
+        tok = st.cfg["github_token"]
+
+        def work():
+            try:
+                bus.installed.emit(updater.install(tok, asset_id, size))
+            except Exception as e:
+                bus.installed.emit(tr("업데이트 실패: ", "Update failed: ") + str(e))
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_installed(res):
+        if not os.path.exists(str(res)):
+            tray.showMessage("Study Overlay", str(res))
+            return
+        tray.hide()
+        getattr(app, "_lock", None) and app._lock.unlock()
+        updater.launch(res)
+        app.quit()
+    bus.update.connect(on_update)
+    bus.installed.connect(on_installed)
     menu = QMenu()
 
     def build_menu():
@@ -723,6 +793,7 @@ def main():
         check(tr("항상 위에", "Always on top"), "on_top", lambda: (ov.apply_flags(), refresh()))
         check(tr("전체 화면일 때 숨기기", "Hide in full screen"), "hide_fullscreen", lambda: visibility())
         menu.addSeparator()
+        menu.addAction(tr("업데이트 확인", "Check for updates"), lambda: check_updates(True))
         menu.addAction(tr("설정", "Settings"), open_settings)
         menu.addAction(tr("종료", "Quit"), app.quit)
     build_menu()
@@ -748,6 +819,8 @@ def main():
     t1 = QTimer(); t1.timeout.connect(tick); t1.start(30_000)
     t2 = QTimer(); t2.timeout.connect(sync); t2.start(REFRESH_MIN * 60_000)
     t3 = QTimer(); t3.timeout.connect(visibility); t3.start(2_000)
+    t4 = QTimer(); t4.timeout.connect(check_updates); t4.start(6 * 3600_000)
+    QTimer.singleShot(20_000, check_updates)
     app.primaryScreenChanged.connect(lambda _: refresh())
     for s in app.screens():
         s.availableGeometryChanged.connect(lambda _: refresh())
