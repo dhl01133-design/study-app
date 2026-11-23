@@ -358,16 +358,80 @@ def set_autostart(on):
         winreg.CloseKey(key)
 
 
+_WIN_API = {}
+
+
+def _user32():
+    """user32 with argument types set, so 64-bit window and monitor handles aren't truncated."""
+    if "u" not in _WIN_API:
+        import ctypes
+        from ctypes import wintypes
+        u = ctypes.WinDLL("user32", use_last_error=True)
+        h = ctypes.c_void_p
+        u.GetForegroundWindow.restype = h
+        u.GetClassNameW.argtypes = [h, ctypes.c_wchar_p, ctypes.c_int]
+        u.GetWindowThreadProcessId.argtypes = [h, ctypes.POINTER(wintypes.DWORD)]
+        u.GetWindowLongW.argtypes = [h, ctypes.c_int]
+        u.GetWindowLongW.restype = ctypes.c_long
+        u.GetWindowRect.argtypes = [h, ctypes.POINTER(wintypes.RECT)]
+        u.MonitorFromWindow.argtypes = [h, wintypes.DWORD]
+        u.MonitorFromWindow.restype = h
+        u.GetMonitorInfoW.argtypes = [h, ctypes.c_void_p]
+
+        class MonitorInfo(ctypes.Structure):
+            _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
+                        ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
+        _WIN_API.update(u=u, MonitorInfo=MonitorInfo, ctypes=ctypes, wintypes=wintypes)
+    return _WIN_API
+
+
+DESKTOP_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"}
+
+
 def fullscreen_app_running():
-    """True while a full-screen app, game or presentation is in front (Windows' own notification-quiet check)."""
+    """True while a full-screen app, game, video or presentation covers the main monitor.
+
+    Windows' SHQueryUserNotificationState alone also reports "busy" when the desktop itself has focus
+    (clicking through the overlay focuses the desktop), which made the overlay vanish on click (build 4).
+    So: D3D full screen / presentation mode count; otherwise the foreground window must be a real app
+    window without a title bar that covers the whole primary monitor.
+    """
     if not WIN:
         return False
-    import ctypes
-    state = ctypes.c_int(0)
-    if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) != 0:
+    try:
+        return _fullscreen_check()
+    except Exception:
         return False
-    return state.value in (2, 3, 4)   # BUSY, RUNNING_D3D_FULL_SCREEN, PRESENTATION_MODE
 
+
+def _fullscreen_check():
+    if True:
+        api = _user32()
+        ctypes, wintypes, u = api["ctypes"], api["wintypes"], api["u"]
+        state = ctypes.c_int(0)
+        if ctypes.windll.shell32.SHQueryUserNotificationState(ctypes.byref(state)) == 0 and state.value in (3, 4):
+            return True   # RUNNING_D3D_FULL_SCREEN, PRESENTATION_MODE
+        hwnd = u.GetForegroundWindow()
+        if not hwnd:
+            return False
+        cls = ctypes.create_unicode_buffer(64)
+        u.GetClassNameW(hwnd, cls, 64)
+        if cls.value in DESKTOP_CLASSES:
+            return False
+        pid = wintypes.DWORD(0)
+        u.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        if pid.value == os.getpid():
+            return False
+        if u.GetWindowLongW(hwnd, -16) & 0x00C00000 == 0x00C00000:   # GWL_STYLE has WS_CAPTION: a normal window
+            return False
+        mon = u.MonitorFromWindow(hwnd, 2)   # MONITOR_DEFAULTTONEAREST
+        mi = api["MonitorInfo"]()
+        mi.cbSize = ctypes.sizeof(mi)
+        if not mon or not u.GetMonitorInfoW(mon, ctypes.byref(mi)) or not (mi.dwFlags & 1):
+            return False   # only the primary monitor, where the overlay lives
+        r, m = wintypes.RECT(), mi.rcMonitor
+        u.GetWindowRect(hwnd, ctypes.byref(r))
+        return r.left <= m.left and r.top <= m.top and r.right >= m.right and r.bottom >= m.bottom
 
 # ---------------------------------------------------------------- day slice (same rules as brief/DaySlice.kt)
 

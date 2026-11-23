@@ -18,6 +18,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r desktop/requirements.txt
+      - name: Check the full-screen test runs on Windows
+        working-directory: desktop
+        run: python -c "import overlay; r = overlay._fullscreen_check(); print('fullscreen:', r)"
       - name: Build StudyOverlay.exe
         working-directory: desktop
         run: |
