@@ -141,7 +141,10 @@ class Task:
         if not cands:
             return self.planned
         best = min(cands, key=lambda c: abs((c - base).days))
-        return datetime(best.year, best.month, best.day, int(h) % 24 if h else 23, int(mi) if h else 59)
+        hour, minute = (int(h), int(mi)) if h else (23, 59)
+        if hour >= 24:   # "24:00" is the end of that day, not its start
+            hour, minute = 23, 59
+        return datetime(best.year, best.month, best.day, hour, minute)
 
 
 class Event:
@@ -619,11 +622,23 @@ class Overlay(QWidget):
     def scale(self):
         return max(0.6, min(2.0, float(self.s.cfg.get("scale", 1.0))))
 
+    def fixed_height(self, up):
+        bar = 48 if self.s.cfg.get("show_bar", True) else 0
+        return PAD + 38 + len(up) * 22 + bar + 10 + (22 if self.s.status() else 0) + PAD
+
+    def max_rows(self, n_rows, up):
+        """Row cap: MAX_ROWS, fewer when a big size setting would push the list off the screen."""
+        avail = self.screen_rect().height() / self.scale() - self.fixed_height(up)
+        fit = max(int(avail // 25), 2)
+        if n_rows <= min(MAX_ROWS, fit):
+            return n_rows
+        return max(min(MAX_ROWS, fit) - 1, 1)   # one line goes to "+N more"
+
     def layout_height(self):
         rows, _, up = self.s.view()
-        n = max(min(len(rows), MAX_ROWS) + (1 if len(rows) > MAX_ROWS else 0), 1)
-        bar = 48 if self.s.cfg.get("show_bar", True) else 0
-        return PAD + 38 + len(up) * 22 + bar + 10 + n * 25 + (22 if self.s.status() else 0) + PAD
+        shown = self.max_rows(len(rows), up)
+        n = max(shown + (1 if len(rows) > shown else 0), 1)
+        return self.fixed_height(up) + n * 25
 
     def place(self):
         k = self.scale()
@@ -695,7 +710,8 @@ class Overlay(QWidget):
         if not rows:
             text(PAD + 22, y, tr("없음", "Nothing"), f_row, c["sub"])
             y += 25
-        for r in rows[:MAX_ROWS]:
+        shown = self.max_rows(len(rows), upcoming)
+        for r in rows[:shown]:
             if r.kind in ("task", "overdue"):   # priority circle: orange p1, blue p2
                 ring = c["p1"] if r.priority == 4 else c["p2"] if r.priority == 3 else c["sub"]
                 p.setBrush(Qt.NoBrush)
@@ -711,8 +727,8 @@ class Overlay(QWidget):
             if r.course:
                 text(x + tw + 10, y + 1, r.course, f_small, c["faint"] if r.past else course_color(r.course, c["light"]), cw)
             y += 25
-        if len(rows) > MAX_ROWS:
-            text(PAD + 124, y, tr(f"외 {len(rows) - MAX_ROWS}개", f"+{len(rows) - MAX_ROWS} more"), f_row, c["sub"])
+        if len(rows) > shown:
+            text(PAD + 124, y, tr(f"외 {len(rows) - shown}개", f"+{len(rows) - shown} more"), f_row, c["sub"])
             y += 25
         st = self.s.status()
         if st:
@@ -1069,8 +1085,18 @@ def main():
         st.snap = snap
         if not st.demo:
             save_json(CACHE_FILE, snap)
+        if snap["errors"]:   # e.g. just after login, before Wi-Fi is up: try again soon, backing off to 10 min
+            retry[0] = min(retry[0] * 2, 600) if retry[0] else 60
+            retry_timer.start(retry[0] * 1000)
+        else:
+            retry[0] = 0
+            retry_timer.stop()
         refresh()
     bus.fetched.connect(on_fetched)
+    retry = [0]
+    retry_timer = QTimer()
+    retry_timer.setSingleShot(True)
+    retry_timer.timeout.connect(lambda: sync())
 
     def sync():
         if st.demo or st.busy:

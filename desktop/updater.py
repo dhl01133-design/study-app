@@ -32,8 +32,8 @@ def cleanup():
     """Deletes the previous exe left behind by an update."""
     if not FROZEN:
         return
-    here = os.path.dirname(sys.executable)
-    for f in glob.glob(os.path.join(here, "StudyOverlay.old.exe")) + glob.glob(os.path.join(here, "StudyOverlay.exe.new")):
+    exe = sys.executable   # whatever the user named the file
+    for f in glob.glob(glob.escape(exe[:-4]) + ".old.exe") + glob.glob(glob.escape(exe) + ".new"):
         try:
             os.remove(f)
         except OSError:
