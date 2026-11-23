@@ -31,7 +31,7 @@ CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.confi
 CFG_FILE = os.path.join(CFG_DIR, "config.json")
 CACHE_FILE = os.path.join(CFG_DIR, "cache.json")
 DEFAULTS = {"todoist_token": "", "ical_url": "", "lang": "en", "corner": "bottom-right", "opacity": 0.9,
-            "on_top": True, "hide_fullscreen": True, "text": "light", "autostart": True, "visible": True,
+            "on_top": True, "hide_fullscreen": True, "text": "light", "start_with_windows": False, "visible": True,
             "github_token": "", "auto_update": True}
 REFRESH_MIN = 15
 
@@ -323,11 +323,27 @@ def save_json(path, data):
     os.replace(tmp, path)
 
 
+RUN_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+
+
+def autostart_registered():
+    if not WIN:
+        return False
+    import winreg
+    try:
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY) as k:
+            winreg.QueryValueEx(k, APP)
+            return True
+    except OSError:
+        return False
+
+
 def set_autostart(on):
+    """Only ever called when the user ticks or unticks "Start with Windows" in Settings."""
     if not (WIN and getattr(sys, "frozen", False)):
         return
     import winreg
-    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
+    key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, RUN_KEY, 0, winreg.KEY_SET_VALUE)
     try:
         if on:
             winreg.SetValueEx(key, APP, 0, winreg.REG_SZ, f'"{sys.executable}"')
@@ -507,7 +523,7 @@ class Settings(QDialog):
         self.upd.setChecked(cfg.get("auto_update", True))
         form.addRow("", self.upd)
         self.auto = QCheckBox(tr("Windows 시작 시 실행", "Start with Windows"))
-        self.auto.setChecked(cfg["autostart"])
+        self.auto.setChecked(autostart_registered())
         form.addRow("", self.auto)
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
         bb.accepted.connect(self.accept)
@@ -535,7 +551,7 @@ class Settings(QDialog):
     def values(self):
         clean = lambda s: s.strip().strip("'\"").replace(" ", "")
         return {"todoist_token": clean(self.token[1].text()), "ical_url": clean(self.ical[1].text()),
-                "github_token": clean(self.gh[1].text()), "autostart": self.auto.isChecked(),
+                "github_token": clean(self.gh[1].text()), "start_with_windows": self.auto.isChecked(),
                 "auto_update": self.upd.isChecked()}
 
 # ---------------------------------------------------------------- app
@@ -645,16 +661,7 @@ def main():
         if not lock.tryLock(100):
             return 0
         app._lock = lock
-        try:
-            if updater.ensure_installed():   # first run of a downloaded exe: copy, start the installed one
-                lock.unlock()
-                return 0
-        except Exception:
-            pass   # keep running from where it is
-        try:
-            set_autostart(load_json(CFG_FILE, DEFAULTS)["autostart"])
-        except Exception:
-            pass
+        updater.cleanup()
 
     st = State(demo=demo)
     ov = Overlay(st)
@@ -690,13 +697,15 @@ def main():
 
     def open_settings():
         dlg = Settings(st.cfg)
+        before = autostart_registered()
         if dlg.exec():
             st.cfg.update(dlg.values())
             save_cfg()
-            try:
-                set_autostart(st.cfg["autostart"])
-            except Exception:
-                pass
+            if st.cfg["start_with_windows"] != before:   # touch the registry only on an explicit change
+                try:
+                    set_autostart(st.cfg["start_with_windows"])
+                except Exception:
+                    pass
             sync()
             check_updates()
 
