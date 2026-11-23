@@ -1,0 +1,42 @@
+name: build desktop overlay
+
+on:
+  push:
+    branches: [main]
+    paths: ["desktop/**", ".github/workflows/desktop.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # lets the job publish the "desktop" release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r desktop/requirements.txt
+      - name: Build StudyOverlay.exe
+        working-directory: desktop
+        run: pyinstaller --onefile --noconsole --name StudyOverlay --exclude-module tkinter overlay.py
+      - name: Smoke test (render demo screenshots)
+        shell: pwsh
+        run: |
+          $exe = "desktop/dist/StudyOverlay.exe"
+          foreach ($a in @("--shot shot_en.png", "--shot shot_ko_dark.png --lang ko --text dark")) {
+            $p = Start-Process $exe -ArgumentList "--demo $a" -PassThru -Wait
+            if ($p.ExitCode -ne 0) { throw "exit $($p.ExitCode) for $a" }
+          }
+          if (!(Test-Path shot_en.png) -or !(Test-Path shot_ko_dark.png)) { throw "no screenshot" }
+          Get-Item desktop/dist/StudyOverlay.exe, shot_*.png | Format-Table Name, Length
+      - name: Publish as release "desktop"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete desktop --yes --cleanup-tag || true
+          gh release create desktop desktop/dist/StudyOverlay.exe shot_en.png shot_ko_dark.png \
+            --title "Study Overlay (Windows) build ${{ github.run_number }}" \
+            --notes "Automatic build from ${{ github.sha }}"
