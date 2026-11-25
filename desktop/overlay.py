@@ -32,9 +32,9 @@ CFG_DIR = os.path.join(os.environ.get("APPDATA") or os.path.expanduser("~/.confi
 CFG_FILE = os.path.join(CFG_DIR, "config.json")
 CACHE_FILE = os.path.join(CFG_DIR, "cache.json")
 DEFAULTS = {"todoist_token": "", "ical_url": "", "github_token": "", "auto_update": True, "lang": "en",
-            "text_color": "#F4F4F5", "scale": 1.0, "opacity": 0.9, "show_bar": True,
+            "text_color": "#111111", "background": "white", "scale": 1.0, "opacity": 0.95, "show_bar": True,
             "corner": "bottom-right", "pos_x": 0, "pos_y": 0, "pos_anchor": "bottom",   # corner or "custom"
-            "on_top": True, "hide_fullscreen": True, "start_with_windows": False, "visible": True,
+            "on_top": True, "hide_fullscreen": False, "cfg_version": 2, "start_with_windows": False, "visible": True,
             "sync_min": 15, "alarms": True, "outline": "medium",   # shadow | thin | medium | thick
             "show_past": True, "show_carried": True, "show_upcoming": True, "only_icampus": False}
 ALARM_FILE = os.path.join(CFG_DIR, "alarms.json")
@@ -449,6 +449,8 @@ def _user32():
         u.SetWindowLongPtrW.restype = ctypes.c_ssize_t
         u.GetAsyncKeyState.argtypes = [ctypes.c_int]
         u.GetAsyncKeyState.restype = ctypes.c_short
+        u.SetWindowPos.argtypes = [h, h, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_uint]
+        u.SetWindowPos.restype = ctypes.c_int
 
         class MonitorInfo(ctypes.Structure):
             _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
@@ -571,8 +573,8 @@ def day_slice(snapshot, d):
 # ---------------------------------------------------------------- overlay window
 
 
-W = 440          # layout width in logical px, before the size setting
-PAD = 4
+W = 462          # layout width in logical px, before the size setting
+PAD = 14         # inner margin (the default white panel needs room around the text)
 MAX_ROWS = 16
 MARGIN = 28
 
@@ -599,7 +601,10 @@ def palette(cfg):
         sub, faint = mix(t, edge, .25), mix(t, edge, .48)
     else:
         sub, faint = with_alpha(t, .74), with_alpha(t, .45)
+    bg = cfg.get("background", "white")
+    panel = {"white": QColor(255, 255, 255), "dark": QColor(22, 22, 26)}.get(bg)
     return dict(
+        panel=panel, panel_line=QColor(0, 0, 0, 30) if bg == "white" else QColor(255, 255, 255, 30),
         text=t, sub=sub, faint=faint, light=light, stroke=stroke, edge=edge,
         halo=(with_alpha(edge, .9) if stroke else QColor(0, 0, 0, 85) if light else QColor(255, 255, 255, 90)),
         accent=accent, on_accent=pick("#0E0E10", "#FFFFFF"), danger=pick("#FF6B6E", "#D93036"),
@@ -680,6 +685,18 @@ class Overlay(QWidget):
             want = (style | 0x20 | 0x80000) if not (self.interactive or self.moving) else (style & ~0x20)
             if want != style:   # WS_EX_TRANSPARENT (0x20), WS_EX_LAYERED (0x80000)
                 u.SetWindowLongPtrW(hwnd, -20, want)
+        except Exception:
+            pass
+
+    def keep_on_top(self):
+        """Re-asserts topmost. Borderless full-screen apps (games, F11 browsers, video players) often make
+        themselves topmost too and end up above the overlay; this puts it back in front (without focus)."""
+        if not WIN or not self.isVisible() or not self.s.cfg["on_top"]:
+            return
+        try:
+            u = _user32()["u"]
+            # HWND_TOPMOST; SWP_NOSIZE | SWP_NOMOVE | SWP_NOACTIVATE | SWP_NOOWNERZORDER
+            u.SetWindowPos(int(self.winId()), -1, 0, 0, 0, 0, 0x1 | 0x2 | 0x10 | 0x200)
         except Exception:
             pass
 
@@ -819,11 +836,15 @@ class Overlay(QWidget):
         now = self.s.now()
         self.hits = []
 
+        if c["panel"] is not None:   # background panel (default: white)
+            p.setPen(QPen(c["panel_line"], 1))
+            p.setBrush(c["panel"])
+            p.drawRoundedRect(QRectF(0.5, 0.5, W - 1, self.layout_height() - 1), 12, 12)
         if self.moving:   # visible frame so there's something to grab
             p.setPen(QPen(c["accent"], 1.5, Qt.DashLine))
             p.setBrush(with_alpha(c["accent"], .12))
             p.drawRoundedRect(QRectF(1, 1, W - 2, self.layout_height() - 2), 10, 10)
-        elif self.interactive:   # faint panel: the whole overlay takes clicks while Ctrl is held
+        elif self.interactive and c["panel"] is None:   # faint panel: the whole overlay takes clicks while Ctrl is held
             p.setPen(Qt.NoPen)
             p.setBrush(with_alpha(c["halo"], .35))
             p.drawRoundedRect(QRectF(0, 0, W, self.layout_height()), 10, 10)
@@ -1006,6 +1027,16 @@ class Settings(QDialog):
         form.addRow(tr("글자색", "Text color"), row)
         self.set_color(self.st.cfg["text_color"], live=False)
 
+        self.bg = QComboBox()
+        self.bgs = [("none", tr("없음", "None")), ("white", tr("흰색", "White")), ("dark", tr("어두운색", "Dark"))]
+        for _, name in self.bgs:
+            self.bg.addItem(name)
+        keys = [k for k, _ in self.bgs]
+        cur = self.st.cfg.get("background", "white")
+        self.bg.setCurrentIndex(keys.index(cur) if cur in keys else 1)
+        self.bg.currentIndexChanged.connect(self.pick_bg)
+        form.addRow(tr("배경", "Background"), self.bg)
+
         self.outline = QComboBox()
         self.outlines = [("shadow", tr("그림자", "Soft shadow")), ("thin", tr("얇게", "Thin")),
                          ("medium", tr("보통", "Medium")), ("thick", tr("두껍게", "Thick"))]
@@ -1129,6 +1160,15 @@ class Settings(QDialog):
         lay.addWidget(b)
         return box, e
 
+    def pick_bg(self, i):
+        key = self.bgs[i][0]
+        match = {"white": "#111111", "dark": "#F4F4F5"}.get(key)   # readable text for that panel
+        self.st.cfg["background"] = key
+        if match:
+            self.set_color(match)
+        else:
+            self.live()
+
     def set_color(self, hexstr, live=True):
         col = QColor(hexstr)
         pm = QPixmap(14, 14)
@@ -1173,8 +1213,13 @@ class State:
         self.demo = demo
         self.fixed_now = fixed_now
         self.cfg = dict(DEFAULTS) if demo else load_json(CFG_FILE, DEFAULTS)
-        if self.cfg.get("text") == "dark" and self.cfg["text_color"] == DEFAULTS["text_color"]:
-            self.cfg["text_color"] = "#111111"   # build 1–3 setting
+        raw = {} if demo else load_json(CFG_FILE, {})
+        if raw and raw.get("cfg_version", 1) < 2:
+            # build 9 (user, 2026-11-25): white background with dark text by default, and stay visible in full screen
+            self.cfg.update(background="white", hide_fullscreen=False, cfg_version=2)
+            if raw.get("text_color", "#F4F4F5").upper() == "#F4F4F5":
+                self.cfg["text_color"] = "#111111"
+            self.save_cfg()
         LANG["en"] = self.cfg["lang"] != "ko"
         self.snap = demo_snapshot() if demo else load_json(CACHE_FILE, {"fetched": 0, "tasks": [], "events": [], "errors": []})
         self.busy = False
@@ -1534,6 +1579,8 @@ def main():
             ov.show()
         elif not want and ov.isVisible():
             ov.hide()
+        if want:
+            ov.keep_on_top()
 
     def tick():   # every 30 s: redraw (Now/Next, time bar, past events), day rollover, alarms
         d = st.now().date()

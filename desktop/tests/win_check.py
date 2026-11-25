@@ -33,5 +33,9 @@ assert not style() & 0x20, "click-through while moving"
 ov.set_move(False)
 app.processEvents()
 assert style() & 0x20, "not click-through after moving"
+ov.keep_on_top()
+app.processEvents()
+assert style() & 0x8, f"not topmost after keep_on_top: {style():#x}"   # WS_EX_TOPMOST
+assert style() & 0x20, "keep_on_top broke click-through"
 print("fullscreen:", o._fullscreen_check(), "ctrl:", o.ctrl_down())
 print("win_check ok")

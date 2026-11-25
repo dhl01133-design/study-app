@@ -39,3 +39,10 @@ Text outline (build 8): every string is a QPainterPath stroked in the opposite o
 the stroke doesn't show through. Settings → Appearance → Text outline: Soft shadow (the old halo),
 Thin, Medium (default), Thick; the stroke scales with font size. The time bar and "now" line get
 the same edge.
+
+Build 9 (user, 2026-11-25): default look is a white panel with dark text (Settings → Appearance →
+Background: None / White / Dark; picking one sets a matching text color). The overlay no longer hides
+in full screen by default, and while "Always on top" is on it re-asserts HWND_TOPMOST every 2 s
+(`keep_on_top`), because borderless full-screen apps make themselves topmost and covered it.
+Exclusive (D3D) full-screen games still draw over everything. Existing configs are migrated once
+(`cfg_version` 2).
