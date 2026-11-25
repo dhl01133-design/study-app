@@ -31,7 +31,9 @@ jobs:
         shell: pwsh
         run: |
           $exe = "desktop/dist/StudyOverlay.exe"
-          Start-Process $exe -ArgumentList "--check-tz tz.txt" -Wait
+          Start-Process $exe -ArgumentList "--check-tz $PWD/tz.txt" -Wait
+          $crash = "$env:APPDATA/StudyOverlay/crash.log"
+          if (Test-Path $crash) { Get-Content $crash; throw "the exe crashed" }
           Get-Content tz.txt
           if ((Get-Content tz.txt) -ne "tz ok") { throw "time zones missing from the bundle" }
           foreach ($a in @("--shot shot_en.png", "--shot shot_ko_dark.png --lang ko --color #1f2a44")) {

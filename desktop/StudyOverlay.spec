@@ -13,7 +13,7 @@ def keep(entry):
 
 
 a = Analysis(
-    ["overlay.py"],
+    ["run.py"],
     hiddenimports=["tzdata"],                 # zoneinfo on Windows needs the tzdata package for calendar time zones
     datas=collect_data_files("tzdata"),
     excludes=["tkinter", "unittest", "pydoc", "doctest", "lib2to3", "sqlite3", "requests", "icalendar",
