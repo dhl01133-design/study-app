@@ -20,7 +20,7 @@ import requests
 
 import updater
 from PySide6.QtCore import QLockFile, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import (QAction, QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QIcon,
+from PySide6.QtGui import (QAction, QColor, QCursor, QPainterPath, QFont, QFontMetrics, QGuiApplication, QIcon,
                            QLinearGradient, QPainter, QPen, QPixmap)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
                                QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSlider,
@@ -35,7 +35,7 @@ DEFAULTS = {"todoist_token": "", "ical_url": "", "github_token": "", "auto_updat
             "text_color": "#F4F4F5", "scale": 1.0, "opacity": 0.9, "show_bar": True,
             "corner": "bottom-right", "pos_x": 0, "pos_y": 0, "pos_anchor": "bottom",   # corner or "custom"
             "on_top": True, "hide_fullscreen": True, "start_with_windows": False, "visible": True,
-            "sync_min": 15, "alarms": True,
+            "sync_min": 15, "alarms": True, "outline": "medium",   # shadow | thin | medium | thick
             "show_past": True, "show_carried": True, "show_upcoming": True, "only_icampus": False}
 ALARM_FILE = os.path.join(CFG_DIR, "alarms.json")
 ALARM_LEADS = (6, 1)   # hours before a real deadline, like the phone app
@@ -592,13 +592,29 @@ def palette(cfg):
     pick = lambda on_dark, on_light: QColor(on_dark if light else on_light)
     good = pick("#4CC98A", "#1F9D63")
     accent = pick("#7FA6FF", "#3B6EF5")
+    outline = cfg.get("outline", "medium")
+    stroke = OUTLINE_W.get(outline, 0.0)
+    edge = QColor("#000000") if light else QColor("#FFFFFF")   # always the opposite of the text
+    if stroke:
+        sub, faint = mix(t, edge, .25), mix(t, edge, .48)
+    else:
+        sub, faint = with_alpha(t, .74), with_alpha(t, .45)
     return dict(
-        text=t, sub=with_alpha(t, .74), faint=with_alpha(t, .45), light=light,
-        halo=QColor(0, 0, 0, 85) if light else QColor(255, 255, 255, 90),
+        text=t, sub=sub, faint=faint, light=light, stroke=stroke, edge=edge,
+        halo=(with_alpha(edge, .9) if stroke else QColor(0, 0, 0, 85) if light else QColor(255, 255, 255, 90)),
         accent=accent, on_accent=pick("#0E0E10", "#FFFFFF"), danger=pick("#FF6B6E", "#D93036"),
         p1=pick("#FF9F43", "#E8740C"), p2=accent, good=good, good_soft=with_alpha(good, .28),
         track=with_alpha(t, .14), busy=with_alpha(t, .80), on_busy=pick("#0E0E10", "#FFFFFF"), hatch=with_alpha(t, .38),
     )
+
+
+OUTLINE_W = {"thin": 2.4, "medium": 3.6, "thick": 5.2}   # stroke width in layout px; half of it shows outside the glyph
+
+
+def mix(a, b, f):
+    """a blended toward b by f, opaque (outlined text needs solid fills, or the stroke shows through)."""
+    return QColor(int(a.red() + (b.red() - a.red()) * f), int(a.green() + (b.green() - a.green()) * f),
+                  int(a.blue() + (b.blue() - a.blue()) * f))
 
 
 def course_color(c, light):
@@ -813,21 +829,35 @@ class Overlay(QWidget):
             p.drawRoundedRect(QRectF(0, 0, W, self.layout_height()), 10, 10)
 
         def text(x, y, s, fnt, color, width=None, align=Qt.AlignLeft, strike=False):
+            fm = QFontMetrics(fnt)
+            if width is not None:
+                s = fm.elidedText(s, Qt.ElideRight, int(width))
+            adv = fm.horizontalAdvance(s)
+            w = width if width is not None else adv + 2
+            if c["stroke"]:
+                # solid outline in the opposite color: stroke the glyph outlines, then fill on top
+                x0 = x + (w - adv if align & Qt.AlignRight else (w - adv) / 2 if align & Qt.AlignHCenter else 0)
+                base = y + (fm.height() - fm.ascent() - fm.descent()) / 2 + fm.ascent()
+                path = QPainterPath()
+                path.addText(QPointF(x0, base), fnt, s)
+                if strike:
+                    sy = base - fm.strikeOutPos()
+                    path.addRect(QRectF(x0, sy - fm.lineWidth() / 2, adv, max(fm.lineWidth(), 1.2)))
+                sw = c["stroke"] * min(max(fnt.pixelSize() / 15, 0.7), 1.4)   # thinner on small text, bolder on the date
+                p.strokePath(path, QPen(c["edge"], sw, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+                p.fillPath(path, color)
+                return adv
             if strike:
                 fnt = QFont(fnt)
                 fnt.setStrikeOut(True)
             p.setFont(fnt)
-            fm = QFontMetrics(fnt)
-            if width is not None:
-                s = fm.elidedText(s, Qt.ElideRight, int(width))
-            w = width if width is not None else fm.horizontalAdvance(s) + 2
             rect = QRect(int(x), int(y), int(w), fm.height())
-            p.setPen(c["halo"])   # soft halo keeps text readable on any wallpaper
+            p.setPen(c["halo"])   # soft shadow
             for dx, dy in ((1, 1), (-1, 1), (1, -1), (-1, -1), (0, 2), (2, 0)):
                 p.drawText(rect.translated(dx, dy), align | Qt.AlignVCenter, s)
             p.setPen(color)
             p.drawText(rect, align | Qt.AlignVCenter, s)
-            return fm.horizontalAdvance(s)
+            return adv
 
         y = PAD
         text(PAD, y, day_label(now.date()), f_head, c["text"])
@@ -860,7 +890,7 @@ class Overlay(QWidget):
             if r.kind in ("task", "overdue"):   # priority circle: orange p1, blue p2; filled once completed
                 ring = c["p1"] if r.priority == 4 else c["p2"] if r.priority == 3 else c["sub"]
                 p.setBrush(Qt.NoBrush)
-                p.setPen(QPen(c["halo"], 3.2))
+                p.setPen(QPen(c["edge"] if c["stroke"] else c["halo"], 1.6 + (c["stroke"] or 1.6)))
                 p.drawEllipse(PAD + 2, y + 6, 12, 12)
                 p.setPen(QPen(ring, 1.6))
                 p.setBrush(ring if r.done else Qt.NoBrush)
@@ -886,7 +916,7 @@ class Overlay(QWidget):
         blocks, travel, free = day_slice(self.s.snap, now.date())
         bh, r = 22, 4
         x = lambda h: x0 + (min(max(h, BAR_FIRST), BAR_LAST) - BAR_FIRST) / (BAR_LAST - BAR_FIRST) * w
-        p.setPen(Qt.NoPen)
+        p.setPen(QPen(c["edge"], 1.6) if c["stroke"] else Qt.NoPen)   # edge keeps the bar visible on any wallpaper
         p.setBrush(c["track"])
         p.drawRoundedRect(QRectF(x0, y0, w, bh), r, r)
 
@@ -923,6 +953,9 @@ class Overlay(QWidget):
 
         hnow = now.hour + now.minute / 60
         if BAR_FIRST <= hnow <= BAR_LAST:
+            if c["stroke"]:
+                p.setPen(QPen(c["edge"], 4))
+                p.drawLine(QPointF(x(hnow), y0 - 3), QPointF(x(hnow), y0 + bh + 3))
             p.setPen(QPen(c["accent"], 2))
             p.drawLine(QPointF(x(hnow), y0 - 2), QPointF(x(hnow), y0 + bh + 2))
 
@@ -972,6 +1005,17 @@ class Settings(QDialog):
         row.addWidget(reset)
         form.addRow(tr("글자색", "Text color"), row)
         self.set_color(self.st.cfg["text_color"], live=False)
+
+        self.outline = QComboBox()
+        self.outlines = [("shadow", tr("그림자", "Soft shadow")), ("thin", tr("얇게", "Thin")),
+                         ("medium", tr("보통", "Medium")), ("thick", tr("두껍게", "Thick"))]
+        for _, name in self.outlines:
+            self.outline.addItem(name)
+        keys = [k for k, _ in self.outlines]
+        cur = self.st.cfg.get("outline", "medium")
+        self.outline.setCurrentIndex(keys.index(cur) if cur in keys else 2)
+        self.outline.currentIndexChanged.connect(lambda i: self.live(outline=self.outlines[i][0]))
+        form.addRow(tr("글자 테두리", "Text outline"), self.outline)
 
         self.size = self.slider(60, 200, int(round(self.st.cfg["scale"] * 100)), lambda v: self.live(scale=v / 100), "%")
         form.addRow(tr("크기", "Size"), self.size)

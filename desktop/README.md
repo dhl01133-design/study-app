@@ -33,3 +33,9 @@ and 1 h before real deadlines (`deadlines()` / `alarms_due()`, fired state in `a
 → List hides finished events, earlier-planned tasks or Now/Next, or shows only iCampus tasks;
 Settings → Behavior sets the sync interval (5/15/30/60 min). `tests/win_check.py` runs on the
 Windows build machine before packaging.
+
+Text outline (build 8): every string is a QPainterPath stroked in the opposite of the text color
+(black around light text, white around dark), then filled; sub and faint colors become solid blends so
+the stroke doesn't show through. Settings → Appearance → Text outline: Soft shadow (the old halo),
+Thin, Medium (default), Thick; the stroke scales with font size. The time bar and "now" line get
+the same edge.
