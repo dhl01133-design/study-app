@@ -186,7 +186,7 @@ fun TodoScreen(s: Snapshot, repo: Repo, snackbar: SnackbarHostState, syncing: Bo
         val text = newTask.trim()
         if (text.isEmpty()) return
         newTask = ""
-        scope.launch { report(repo.add(text), tr("추가됨", "Added"), undo = null) }
+        scope.launch { report(repo.add(text), "‘$text’ " + tr("추가됨", "added"), undo = null) }
     }
 
     fun startPlan() {
