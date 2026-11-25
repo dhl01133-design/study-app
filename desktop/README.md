@@ -46,3 +46,11 @@ in full screen by default, and while "Always on top" is on it re-asserts HWND_TO
 (`keep_on_top`), because borderless full-screen apps make themselves topmost and covered it.
 Exclusive (D3D) full-screen games still draw over everything. Existing configs are migrated once
 (`cfg_version` 2).
+
+Build 10, lightness: `build()` and the day slice are memoized per minute/data version; the window
+paints from a cached pixmap and only re-renders when the picture key changes; ticks are once a
+minute (aligned to the minute); the Ctrl poll is 60 ms only while the pointer is over the list, else
+400 ms; the iCal feed uses ETag/Last-Modified plus a content hash, so it's only parsed when it changed
+or the day changed; after each sync `gc.collect()` and `EmptyWorkingSet`; on start BELOW_NORMAL
+priority and Windows 11 efficiency mode (EcoQoS). The workflow measures RAM and CPU of the new and
+previous builds (demo mode, idle) and publishes `bench.txt` with the release.

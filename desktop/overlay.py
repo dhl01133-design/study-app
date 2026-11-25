@@ -38,6 +38,8 @@ DEFAULTS = {"todoist_token": "", "ical_url": "", "github_token": "", "auto_updat
             "sync_min": 15, "alarms": True, "outline": "medium",   # shadow | thin | medium | thick
             "show_past": True, "show_carried": True, "show_upcoming": True, "only_icampus": False}
 ALARM_FILE = os.path.join(CFG_DIR, "alarms.json")
+SECRET_KEYS = ("todoist_token", "ical_url", "github_token")
+LIST_KEYS = ("show_past", "show_carried", "show_upcoming", "only_icampus")
 ALARM_LEADS = (6, 1)   # hours before a real deadline, like the phone app
 REFRESH_MIN = 15
 
@@ -329,12 +331,34 @@ def fetch_tasks(token):
     return out
 
 
-def fetch_events(url, today):
+def fetch_events(url, today, cache=None):
+    """Google's feed holds the whole calendar history; it's only downloaded and parsed again when it changed
+    (ETag / Last-Modified, then a content hash) or the day changed. `cache` is updated in place."""
+    import hashlib
+    cache = cache if cache is not None else {}
+    headers = {}
+    if cache.get("events") is not None and cache.get("day") == today.isoformat():
+        if cache.get("etag"):
+            headers["If-None-Match"] = cache["etag"]
+        if cache.get("last_modified"):
+            headers["If-Modified-Since"] = cache["last_modified"]
+    r = requests.get(url.strip(), timeout=30, headers=headers)
+    if r.status_code == 304:
+        return cache["events"]
+    r.raise_for_status()
+    digest = hashlib.sha1(r.content).hexdigest()
+    cache.update(etag=r.headers.get("ETag"), last_modified=r.headers.get("Last-Modified"))
+    if digest == cache.get("hash") and cache.get("day") == today.isoformat() and cache.get("events") is not None:
+        return cache["events"]
+    events = parse_events(r.content, today)
+    cache.update(hash=digest, day=today.isoformat(), events=events)
+    return events
+
+
+def parse_events(content, today):
     import icalendar
     import recurring_ical_events
-    r = requests.get(url.strip(), timeout=30)
-    r.raise_for_status()
-    cal = icalendar.Calendar.from_ical(r.content)
+    cal = icalendar.Calendar.from_ical(content)
     out = []
     for ev in recurring_ical_events.of(cal).between(today - timedelta(days=1), today + timedelta(days=2)):
         s = ev.get("DTSTART").dt
@@ -350,6 +374,7 @@ def fetch_events(url, today):
             elif e.tzinfo:
                 e = e.astimezone().replace(tzinfo=None)
         out.append({"summary": str(ev.get("SUMMARY", "")), "start": s.isoformat(), "end": e.isoformat(), "all_day": all_day})
+    del cal
     return out
 
 
@@ -457,6 +482,37 @@ def _user32():
                         ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
         _WIN_API.update(u=u, MonitorInfo=MonitorInfo, ctypes=ctypes, wintypes=wintypes)
     return _WIN_API
+
+
+def go_light():
+    """Below-normal priority and Windows 11 efficiency mode (EcoQoS): the overlay never competes with
+    what you're doing."""
+    if not WIN:
+        return
+    try:
+        import ctypes
+        k = ctypes.windll.kernel32
+        proc = k.GetCurrentProcess()
+        k.SetPriorityClass(proc, 0x00004000)   # BELOW_NORMAL_PRIORITY_CLASS
+
+        class PowerThrottling(ctypes.Structure):
+            _fields_ = [("Version", ctypes.c_ulong), ("ControlMask", ctypes.c_ulong), ("StateMask", ctypes.c_ulong)]
+        pt = PowerThrottling(1, 0x1, 0x1)       # PROCESS_POWER_THROTTLING_EXECUTION_SPEED on
+        k.SetProcessInformation(proc, 4, ctypes.byref(pt), ctypes.sizeof(pt))   # ProcessPowerThrottling
+    except Exception:
+        pass
+
+
+def trim_memory():
+    """Frees Python garbage and hands unused pages back to Windows after a sync."""
+    import gc
+    gc.collect()
+    if WIN:
+        try:
+            import ctypes
+            ctypes.windll.psapi.EmptyWorkingSet(ctypes.windll.kernel32.GetCurrentProcess())
+        except Exception:
+            pass
 
 
 def ctrl_down():
@@ -647,6 +703,7 @@ class Overlay(QWidget):
         self.on_move_done = None
         self.interactive = False    # Ctrl held over the overlay: rows can be clicked
         self.hits = []              # (QRectF in layout px, task_id) from the last paint
+        self._pic = (None, None)    # (key, QPixmap) of the last drawn picture
         self.hover = None
         self.on_task_click = None
         self.setMouseTracking(True)
@@ -807,7 +864,8 @@ class Overlay(QWidget):
     def place(self):
         k = self.scale()
         w, h = int(W * k + 1), int(self.layout_height() * k + 1)
-        self.resize(w, h)
+        if (self.width(), self.height()) != (w, h):
+            self.resize(w, h)
         if self._drag is not None:
             return
         r = self.screen_rect()
@@ -818,14 +876,38 @@ class Overlay(QWidget):
         else:
             x = r.right() - w + 1 - MARGIN if "right" in c["corner"] else r.left() + MARGIN
             y = r.bottom() - h + 1 - MARGIN if "bottom" in c["corner"] else r.top() + MARGIN
-        self.move(self.clamp(QPoint(x, y)))
+        pt = self.clamp(QPoint(x, y))
+        if pt != self.pos():
+            self.move(pt)
 
     # ---- drawing
+    def picture_key(self):
+        return (self.s.view_key(), tuple(sorted((k, str(v)) for k, v in self.s.cfg.items() if k not in SECRET_KEYS)),
+                self.interactive, self.hover, self.moving, self.width(), self.height(), self.devicePixelRatioF(),
+                self.s.status())
+
     def paintEvent(self, _):
+        """Draws from a cached picture; the outlined text is only re-rendered when something visible changed."""
+        key = self.picture_key()
+        if self._pic[0] != key:
+            dpr = self.devicePixelRatioF()
+            pm = QPixmap(int(self.width() * dpr), int(self.height() * dpr))
+            pm.setDevicePixelRatio(dpr)
+            pm.fill(Qt.transparent)
+            q = QPainter(pm)
+            q.scale(self.scale(), self.scale())
+            self.paint(q)
+            q.end()
+            self._pic = (key, pm)
         p = QPainter(self)
-        p.scale(self.scale(), self.scale())
-        self.paint(p)
+        p.drawPixmap(0, 0, self._pic[1])
         p.end()
+
+    def refresh_if_changed(self):
+        """Repaints only when the picture would differ (the minute ticked, data or settings changed)."""
+        self.place()
+        if self._pic[0] != self.picture_key():
+            self.update()
 
     def paint(self, p):
         p.setRenderHints(QPainter.Antialiasing | QPainter.TextAntialiasing)
@@ -934,7 +1016,7 @@ class Overlay(QWidget):
 
     def paint_bar(self, p, c, x0, y0, w, now, f_bar, text):
         """Today's time bar, 08–24, like the widget: classes blue, other events solid, travel hatched, free green."""
-        blocks, travel, free = day_slice(self.s.snap, now.date())
+        blocks, travel, free = self.s.slice()
         bh, r = 22, 4
         x = lambda h: x0 + (min(max(h, BAR_FIRST), BAR_LAST) - BAR_FIRST) / (BAR_LAST - BAR_FIRST) * w
         p.setPen(QPen(c["edge"], 1.6) if c["stroke"] else Qt.NoPen)   # edge keeps the bar visible on any wallpaper
@@ -1225,12 +1307,35 @@ class State:
         self.busy = False
         self.start_move = lambda: None
         self.done = {}   # task id -> completion time; shown struck through until purged
+        self.version = 0
+        self._view = (None, None)
+        self._slice = (None, None)
+        self.ical = {}   # iCal download cache: etag, last_modified, hash, day, events
 
     def now(self):
         return self.fixed_now or datetime.now()
 
+    def bump(self):
+        """Call after the snapshot changes; cached views and the drawn picture are rebuilt."""
+        self.version += 1
+
+    def view_key(self):
+        n = self.now()
+        return (self.version, n.date(), n.hour, n.minute, tuple(self.cfg.get(k) for k in LIST_KEYS + ("lang",)),
+                frozenset(self.done))
+
     def view(self):
-        return build(self.snap, self.now(), self.cfg, self.done)
+        """build() runs once per minute or data change, not on every layout/paint call."""
+        key = self.view_key()
+        if self._view[0] != key:
+            self._view = (key, build(self.snap, self.now(), self.cfg, self.done))
+        return self._view[1]
+
+    def slice(self):
+        key = (self.version, self.now().date())
+        if self._slice[0] != key:
+            self._slice = (key, day_slice(self.snap, self.now().date()))
+        return self._slice[1]
 
     def save_cfg(self):
         if not self.demo:
@@ -1245,7 +1350,7 @@ class State:
         return "; ".join(errs)[:120] if errs else ""
 
 
-def fetch_all(cfg, today):
+def fetch_all(cfg, today, ical_cache=None):
     snap, errors = {"fetched": time.time(), "tasks": [], "events": []}, []
     if cfg["todoist_token"]:
         try:
@@ -1255,7 +1360,7 @@ def fetch_all(cfg, today):
             snap["tasks"] = None
     if cfg["ical_url"]:
         try:
-            snap["events"] = fetch_events(cfg["ical_url"], today)
+            snap["events"] = fetch_events(cfg["ical_url"], today, ical_cache)
         except Exception as e:
             errors.append(tr("캘린더: ", "Calendar: ") + type(e).__name__)
             snap["events"] = None
@@ -1300,6 +1405,7 @@ def main():
     QGuiApplication.setHighDpiScaleFactorRoundingPolicy(Qt.HighDpiScaleFactorRoundingPolicy.PassThrough)
     app = QApplication(sys.argv)
     app.setQuitOnLastWindowClosed(False)
+    go_light()
 
     if "--shot" in args:
         st = State(demo=True, fixed_now=datetime.combine(date.today(), datetime.min.time()).replace(hour=11, minute=20))
@@ -1329,8 +1435,7 @@ def main():
     dialog = [None]
 
     def refresh():
-        ov.place()
-        ov.update()
+        ov.refresh_if_changed()
 
     def on_fetched(snap):
         st.busy = False
@@ -1338,10 +1443,14 @@ def main():
         for k in ("tasks", "events"):   # keep the last good data when one source fails
             if snap[k] is None:
                 snap[k] = old.get(k, [])
+        changed = {k: snap[k] for k in ("tasks", "events")} != {k: old.get(k) for k in ("tasks", "events")}
         st.snap = snap
-        if not st.demo:
-            save_json(CACHE_FILE, snap)
+        if changed:
+            st.bump()
+            if not st.demo:
+                save_json(CACHE_FILE, snap)
         check_alarms()
+        trim_memory()
         if snap["errors"]:   # e.g. just after login, before Wi-Fi is up: try again soon, backing off to 10 min
             retry[0] = min(retry[0] * 2, 600) if retry[0] else 60
             retry_timer.start(retry[0] * 1000)
@@ -1360,7 +1469,7 @@ def main():
             return
         st.busy = True
         cfg, today = dict(st.cfg), st.now().date()
-        threading.Thread(target=lambda: bus.fetched.emit(fetch_all(cfg, today)), daemon=True).start()
+        threading.Thread(target=lambda: bus.fetched.emit(fetch_all(cfg, today, st.ical)), daemon=True).start()
 
     def apply_cfg():
         LANG["en"] = st.cfg["lang"] != "ko"
@@ -1435,14 +1544,16 @@ def main():
             return   # undone, or completed again later (that click has its own timer)
         st.done.pop(tid, None)
         st.snap["tasks"] = [t for t in st.snap.get("tasks", []) if t["id"] != tid]
+        st.bump()
         if not st.demo:
             save_json(CACHE_FILE, st.snap)
         refresh()
     ov.on_task_click = on_task_click
 
-    def poll_ctrl():   # every 80 ms: Ctrl held with the pointer over the list makes it clickable
-        want = ov.isVisible() and not ov.moving and ctrl_down() and ov.frameGeometry().contains(QCursor.pos())
-        ov.set_interactive(want)
+    def poll_ctrl():   # Ctrl held with the pointer over the list makes it clickable
+        over = ov.isVisible() and not ov.moving and ov.frameGeometry().contains(QCursor.pos())
+        ov.set_interactive(over and ctrl_down())
+        t5.setInterval(60 if over else 400)   # quick to react near the list, idle elsewhere
 
     # ---- deadline alarms
     fired = load_json(ALARM_FILE, {}) if not demo else {}
@@ -1590,10 +1701,16 @@ def main():
         refresh()
         check_alarms()
 
-    t1 = QTimer(); t1.timeout.connect(tick); t1.start(30_000)
+    # once a minute, just after the minute starts, so the clock and Now/Next change on time
+    t1 = QTimer(); t1.timeout.connect(tick)
+
+    def start_minutely():
+        tick()
+        t1.start(60_000)
+    QTimer.singleShot(int((60 - datetime.now().second) * 1000 + 300), start_minutely)
     t2 = QTimer(); t2.timeout.connect(sync); t2.start(max(5, int(st.cfg.get("sync_min", REFRESH_MIN))) * 60_000)
     t5 = QTimer(); t5.timeout.connect(poll_ctrl); t5.start(80)
-    t3 = QTimer(); t3.timeout.connect(visibility); t3.start(2_000)
+    t3 = QTimer(); t3.timeout.connect(visibility); t3.setTimerType(Qt.CoarseTimer); t3.start(2_000)
     t4 = QTimer(); t4.timeout.connect(check_updates); t4.start(6 * 3600_000)
     QTimer.singleShot(20_000, check_updates)
     app.primaryScreenChanged.connect(lambda _: refresh())
@@ -1602,6 +1719,7 @@ def main():
 
     refresh()
     visibility()
+    QTimer.singleShot(15_000, trim_memory)   # after start-up allocations settle
     if not demo and not st.cfg["todoist_token"] and not st.cfg["ical_url"]:
         QTimer.singleShot(300, open_settings)
     else:

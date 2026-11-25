@@ -35,12 +35,39 @@ jobs:
           }
           if (!(Test-Path shot_en.png) -or !(Test-Path shot_ko_dark.png)) { throw "no screenshot" }
           Get-Item desktop/dist/StudyOverlay.exe, shot_*.png | Format-Table Name, Length
+      - name: Measure RAM and CPU against the previous build (demo mode, idle)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        continue-on-error: true
+        run: |
+          gh release download desktop -p StudyOverlay.exe -D old 2>$null
+          $rows = @()
+          foreach ($e in @("old/StudyOverlay.exe", "desktop/dist/StudyOverlay.exe")) {
+            if (!(Test-Path $e)) { continue }
+            $p = Start-Process $e -ArgumentList "--demo" -PassThru
+            Start-Sleep 25
+            # one-file exe: the app runs in a child of the bootloader process
+            $ids = @($p.Id) + @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)" | % ProcessId)
+            $cpu0 = ($ids | % { (Get-Process -Id $_).TotalProcessorTime.TotalMilliseconds } | Measure -Sum).Sum
+            Start-Sleep 60
+            $procs = $ids | % { Get-Process -Id $_ }
+            $cpu1 = ($procs | % { $_.TotalProcessorTime.TotalMilliseconds } | Measure -Sum).Sum
+            $ws = ($procs | % { $_.WorkingSet64 } | Measure -Sum).Sum / 1MB
+            $priv = ($procs | % { $_.PrivateMemorySize64 } | Measure -Sum).Sum / 1MB
+            $rows += [pscustomobject]@{ exe = $e; working_set_MB = [math]::Round($ws, 1); private_MB = [math]::Round($priv, 1);
+                                         cpu_ms_per_min = [math]::Round($cpu1 - $cpu0, 0) }
+            $ids | % { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+            Start-Sleep 2
+          }
+          $rows | Format-Table -AutoSize | Out-String -Width 200 | Tee-Object bench.txt
       - name: Publish as release "desktop"
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete desktop --yes --cleanup-tag || true
-          gh release create desktop desktop/dist/StudyOverlay.exe shot_en.png shot_ko_dark.png \
+          touch bench.txt
+          gh release create desktop desktop/dist/StudyOverlay.exe shot_en.png shot_ko_dark.png bench.txt \
             --title "Study Overlay (Windows) build ${{ github.run_number }}" \
             --notes "Automatic build from ${{ github.sha }}"
