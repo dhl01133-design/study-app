@@ -24,3 +24,12 @@ token in Settings (same fine-grained token as the phone: study-app, Contents: re
 `desktop` release 20 s after start and every 6 h. When "build N" there is higher than the running build
 (`build_info.py`, written by the workflow), it downloads the exe next to itself, renames the running one
 to `.old.exe`, swaps the new one in and restarts. Tray → Check for updates does the same on demand.
+
+Ctrl+click (build 7): hold Ctrl with the pointer over the list and it takes clicks (faint panel, row
+highlight); click a task to complete it in Todoist, click it again within 8 s to undo. On Windows,
+click-through is WS_EX_TRANSPARENT toggled in place (`enforce_input_style`), not Qt's
+WindowTransparentForInput, so Qt never drops the clicks. Deadline alarms: Windows notifications 6 h
+and 1 h before real deadlines (`deadlines()` / `alarms_due()`, fired state in `alarms.json`). Settings
+→ List hides finished events, earlier-planned tasks or Now/Next, or shows only iCampus tasks;
+Settings → Behavior sets the sync interval (5/15/30/60 min). `tests/win_check.py` runs on the
+Windows build machine before packaging.

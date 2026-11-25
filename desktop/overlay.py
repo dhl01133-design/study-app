@@ -20,7 +20,7 @@ import requests
 
 import updater
 from PySide6.QtCore import QLockFile, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import (QAction, QColor, QFont, QFontMetrics, QGuiApplication, QIcon,
+from PySide6.QtGui import (QAction, QColor, QCursor, QFont, QFontMetrics, QGuiApplication, QIcon,
                            QLinearGradient, QPainter, QPen, QPixmap)
 from PySide6.QtWidgets import (QApplication, QCheckBox, QColorDialog, QComboBox, QDialog, QDialogButtonBox,
                                QFormLayout, QHBoxLayout, QLabel, QLineEdit, QMenu, QPushButton, QSlider,
@@ -34,7 +34,11 @@ CACHE_FILE = os.path.join(CFG_DIR, "cache.json")
 DEFAULTS = {"todoist_token": "", "ical_url": "", "github_token": "", "auto_update": True, "lang": "en",
             "text_color": "#F4F4F5", "scale": 1.0, "opacity": 0.9, "show_bar": True,
             "corner": "bottom-right", "pos_x": 0, "pos_y": 0, "pos_anchor": "bottom",   # corner or "custom"
-            "on_top": True, "hide_fullscreen": True, "start_with_windows": False, "visible": True}
+            "on_top": True, "hide_fullscreen": True, "start_with_windows": False, "visible": True,
+            "sync_min": 15, "alarms": True,
+            "show_past": True, "show_carried": True, "show_upcoming": True, "only_icampus": False}
+ALARM_FILE = os.path.join(CFG_DIR, "alarms.json")
+ALARM_LEADS = (6, 1)   # hours before a real deadline, like the phone app
 REFRESH_MIN = 15
 
 # ---------------------------------------------------------------- language
@@ -170,21 +174,27 @@ class Event:
 
 
 class Row:
-    def __init__(self, time, title, course="", kind="event", priority=1, past=False):
+    def __init__(self, time, title, course="", kind="event", priority=1, past=False, task_id=None, done=False):
         self.time, self.title, self.course, self.kind, self.priority, self.past = time, title, course, kind, priority, past
+        self.task_id, self.done = task_id, done
 
 
-def build(snapshot, now):
-    """Header extras and rows for today, same rules as the app's Brief.todayLines (plus overdue and carried-over tasks)."""
+def build(snapshot, now, opts=None, done=()):
+    """Header extras and rows for today, same rules as the app's Brief.todayLines (plus overdue and carried-over tasks).
+
+    opts: the List settings (show_past, show_carried, show_upcoming, only_icampus). done: ids just completed,
+    still shown struck through so a second click can undo.
+    """
+    o = {**{k: DEFAULTS[k] for k in ("show_past", "show_carried", "show_upcoming", "only_icampus")}, **(opts or {})}
     today = now.date()
     tasks = [Task(t) for t in snapshot.get("tasks", [])]
-    tasks = [t for t in tasks if not t.bookkeeping]
+    tasks = [t for t in tasks if not t.bookkeeping and (not o["only_icampus"] or "icampus" in t.labels)]
     events = [Event(e) for e in snapshot.get("events", [])]
     rows = []
 
     overdue = sorted([(t, t.deadline) for t in tasks if t.deadline and t.deadline.date() < today], key=lambda x: x[1])
     for t, due in overdue:
-        rows.append(Row(md(due.date()), t.title, t.course, "overdue", t.priority))
+        rows.append(Row(md(due.date()), t.title, t.course, "overdue", t.priority, task_id=t.id, done=t.id in done))
 
     for e in sorted([e for e in events if e.occurs_on(today)], key=lambda e: (not e.all_day, e.start)):
         if e.all_day:
@@ -196,10 +206,12 @@ def build(snapshot, now):
         else:
             label = "~" + hm(e.end)
         past = not e.all_day and not e.is_deadline and e.end <= now
+        if past and not o["show_past"]:
+            continue
         rows.append(Row(label, e.title, e.course, "deadline" if e.is_deadline else "event", past=past))
 
     overdue_ids = {t.id for t, _ in overdue}
-    carried = [t for t in tasks if t.date and t.date < today and t.id not in overdue_ids]
+    carried = [t for t in tasks if t.date and t.date < today and t.id not in overdue_ids] if o["show_carried"] else []
     todays = [t for t in tasks if t.date == today and t.id not in overdue_ids]
     for t in sorted(carried, key=lambda t: t.planned) + sorted(todays, key=lambda t: t.planned):
         label = md(t.date) if t.date < today else ("~" + hm(t.time) if t.time else "")
@@ -207,18 +219,62 @@ def build(snapshot, now):
         dl = t.deadline
         if dl and dl.date() != t.date:
             title += tr(f" (마감 {md(dl.date())})", f" (due {md(dl.date())})")
-        rows.append(Row(label, title, t.course, "task", t.priority))
+        rows.append(Row(label, title, t.course, "task", t.priority, task_id=t.id, done=t.id in done))
 
     # Now / Next line, like the widget
     timed = sorted([e for e in events if not e.all_day and not e.is_deadline and e.start != e.end], key=lambda e: e.start)
     cur = next((e for e in timed if e.start <= now < e.end), None)
     nxt = next((e for e in timed if e.start > now and e.start.date() == today), None)
     upcoming = []
+    if not o["show_upcoming"]:
+        cur = nxt = None
     if cur:
         upcoming.append((tr("지금", "Now"), cur.title, tr(f"~{hm(cur.end)}", f"until {hm(cur.end)}")))
     if nxt:
         upcoming.append((tr("다음", "Next"), nxt.title, until(now, nxt.start)))
-    return rows, len(overdue), upcoming
+    return rows, len([1 for t, _ in overdue if t.id not in done]), upcoming
+
+
+HW_RE = re.compile(r"hw\s*0*(\d+)", re.I)
+
+
+def deadlines(snapshot, opts=None):
+    """Real deadlines, like the app's Brief.deadlines: open `icampus` tasks (description "Due" or Todoist date) and
+    calendar deadline events (all-day ones at 23:59). The same item from both counts once."""
+    out, seen = [], set()
+    tasks = [Task(t) for t in snapshot.get("tasks", [])]
+    items = [(t.course, t.title, t.deadline) for t in tasks if not t.bookkeeping and "icampus" in t.labels and t.deadline]
+    for e in (Event(x) for x in snapshot.get("events", [])):
+        if e.is_deadline:
+            at = datetime.combine(e.start.date(), datetime.strptime("23:59", "%H:%M").time()) if e.all_day else e.start
+            items.append((e.course, e.title, at))
+    for course, title, at in sorted(items, key=lambda x: x[2]):
+        hw = HW_RE.search(title)
+        key = f"{course}|{at.date()}|{hw.group(1) if hw else title}"
+        if key not in seen:
+            seen.add(key)
+            out.append(dict(key=key, course=course, title=title, at=at))
+    return out
+
+
+def alarms_due(dls, fired, now):
+    """Deadlines whose 6 h or 1 h alarm is due now and hasn't fired. Marks them in `fired` ({key|lead: deadline iso}).
+    After a late start only the nearest alarm fires (one notification, not two)."""
+    due = []
+    for d in dls:
+        if d["at"] <= now:
+            continue
+        open_leads = [h for h in ALARM_LEADS if now >= d["at"] - timedelta(hours=h)]
+        if not open_leads:
+            continue
+        new = [h for h in open_leads if f"{d['key']}|{h}" not in fired]
+        for h in open_leads:
+            fired[f"{d['key']}|{h}"] = d["at"].isoformat()
+        if new:
+            due.append(d)
+    for k in [k for k, v in fired.items() if datetime.fromisoformat(v) < now - timedelta(days=2)]:
+        del fired[k]   # forget alarms for deadlines long past
+    return due
 
 # ---------------------------------------------------------------- data sources
 
@@ -239,6 +295,13 @@ def todoist_pages(token, path):
         cursor = j.get("next_cursor")
         if not cursor or len(out) >= 5000:
             return out
+
+
+def todoist_post(token, path):
+    r = requests.post("https://api.todoist.com/api/v1" + path, headers={"Authorization": f"Bearer {token}"}, timeout=30)
+    if r.status_code == 401:
+        raise RuntimeError(tr("Todoist 토큰이 올바르지 않음", "Todoist token is invalid"))
+    r.raise_for_status()
 
 
 def parse_due(raw):
@@ -380,12 +443,27 @@ def _user32():
         u.MonitorFromWindow.argtypes = [h, wintypes.DWORD]
         u.MonitorFromWindow.restype = h
         u.GetMonitorInfoW.argtypes = [h, ctypes.c_void_p]
+        u.GetWindowLongPtrW.argtypes = [h, ctypes.c_int]
+        u.GetWindowLongPtrW.restype = ctypes.c_ssize_t
+        u.SetWindowLongPtrW.argtypes = [h, ctypes.c_int, ctypes.c_ssize_t]
+        u.SetWindowLongPtrW.restype = ctypes.c_ssize_t
+        u.GetAsyncKeyState.argtypes = [ctypes.c_int]
+        u.GetAsyncKeyState.restype = ctypes.c_short
 
         class MonitorInfo(ctypes.Structure):
             _fields_ = [("cbSize", wintypes.DWORD), ("rcMonitor", wintypes.RECT),
                         ("rcWork", wintypes.RECT), ("dwFlags", wintypes.DWORD)]
         _WIN_API.update(u=u, MonitorInfo=MonitorInfo, ctypes=ctypes, wintypes=wintypes)
     return _WIN_API
+
+
+def ctrl_down():
+    if not WIN:
+        return False
+    try:
+        return bool(_user32()["u"].GetAsyncKeyState(0x11) & 0x8000)   # VK_CONTROL
+    except Exception:
+        return False
 
 
 DESKTOP_CLASSES = {"Progman", "WorkerW", "Shell_TrayWnd", "Shell_SecondaryTrayWnd"}
@@ -546,20 +624,64 @@ class Overlay(QWidget):
         self.moving = False
         self._drag = None
         self.on_move_done = None
+        self.interactive = False    # Ctrl held over the overlay: rows can be clicked
+        self.hits = []              # (QRectF in layout px, task_id) from the last paint
+        self.hover = None
+        self.on_task_click = None
+        self.setMouseTracking(True)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.apply_flags()
 
     def apply_flags(self):
         flags = Qt.FramelessWindowHint | Qt.Tool | Qt.NoDropShadowWindowHint
-        if not self.moving:   # click-through except while being moved
-            flags |= Qt.WindowTransparentForInput | Qt.WindowDoesNotAcceptFocus
+        if not self.moving:
+            flags |= Qt.WindowDoesNotAcceptFocus
+            if not WIN:   # on Windows click-through is WS_EX_TRANSPARENT, set directly (see enforce_input_style)
+                flags |= Qt.WindowTransparentForInput
         flags |= Qt.WindowStaysOnTopHint if (self.s.cfg["on_top"] or self.moving) else Qt.WindowStaysOnBottomHint
         visible = self.isVisible()
+        self.interactive = False
         self.setWindowFlags(flags)
         self.setWindowOpacity(float(self.s.cfg["opacity"]))
         if visible:
             self.show()
+        self.enforce_input_style()
+
+    def showEvent(self, e):
+        super().showEvent(e)
+        self.enforce_input_style()
+
+    def enforce_input_style(self):
+        """Click-through unless Ctrl-clicking or moving. Qt's own WindowTransparentForInput isn't used on Windows,
+        so Qt never drops the clicks; the extended style is toggled in place instead (no flicker)."""
+        if not WIN or not self.isVisible():
+            return
+        try:
+            u = _user32()["u"]
+            hwnd = int(self.winId())
+            style = u.GetWindowLongPtrW(hwnd, -20)   # GWL_EXSTYLE
+            want = (style | 0x20 | 0x80000) if not (self.interactive or self.moving) else (style & ~0x20)
+            if want != style:   # WS_EX_TRANSPARENT (0x20), WS_EX_LAYERED (0x80000)
+                u.SetWindowLongPtrW(hwnd, -20, want)
+        except Exception:
+            pass
+
+    # ---- Ctrl+click
+    def set_interactive(self, on):
+        self.enforce_input_style()   # also repairs the style if Qt reset it
+        if on == self.interactive or self.moving or not WIN:
+            return
+        self.interactive = on
+        self.enforce_input_style()
+        self.hover = None
+        self.setCursor(Qt.PointingHandCursor) if on else self.unsetCursor()
+        self.update()
+
+    def hit(self, pos):
+        k = self.scale()
+        pt = QPointF(pos.x() / k, pos.y() / k)
+        return next((tid for rect, tid in self.hits if rect.contains(pt)), None)
 
     # ---- moving
     def set_move(self, on):
@@ -582,10 +704,19 @@ class Overlay(QWidget):
     def mousePressEvent(self, e):
         if self.moving and e.button() == Qt.LeftButton:
             self._drag = e.globalPosition().toPoint() - self.frameGeometry().topLeft()
+        elif self.interactive and e.button() == Qt.LeftButton:
+            tid = self.hit(e.position())
+            if tid and self.on_task_click:
+                self.on_task_click(tid)
 
     def mouseMoveEvent(self, e):
         if self.moving and self._drag is not None:
             self.move(self.clamp(e.globalPosition().toPoint() - self._drag))
+        elif self.interactive:
+            h = self.hit(e.position())
+            if h != self.hover:
+                self.hover = h
+                self.update()
 
     def mouseReleaseEvent(self, e):
         if self.moving and self._drag is not None:
@@ -670,13 +801,21 @@ class Overlay(QWidget):
         rows, overdue, upcoming = self.s.view()
         right = W - PAD
         now = self.s.now()
+        self.hits = []
 
         if self.moving:   # visible frame so there's something to grab
             p.setPen(QPen(c["accent"], 1.5, Qt.DashLine))
             p.setBrush(with_alpha(c["accent"], .12))
             p.drawRoundedRect(QRectF(1, 1, W - 2, self.layout_height() - 2), 10, 10)
+        elif self.interactive:   # faint panel: the whole overlay takes clicks while Ctrl is held
+            p.setPen(Qt.NoPen)
+            p.setBrush(with_alpha(c["halo"], .35))
+            p.drawRoundedRect(QRectF(0, 0, W, self.layout_height()), 10, 10)
 
-        def text(x, y, s, fnt, color, width=None, align=Qt.AlignLeft):
+        def text(x, y, s, fnt, color, width=None, align=Qt.AlignLeft, strike=False):
+            if strike:
+                fnt = QFont(fnt)
+                fnt.setStrikeOut(True)
             p.setFont(fnt)
             fm = QFontMetrics(fnt)
             if width is not None:
@@ -712,20 +851,28 @@ class Overlay(QWidget):
             y += 25
         shown = self.max_rows(len(rows), upcoming)
         for r in rows[:shown]:
-            if r.kind in ("task", "overdue"):   # priority circle: orange p1, blue p2
+            if r.task_id:
+                self.hits.append((QRectF(0, y, W, 25), r.task_id))
+                if self.interactive and self.hover == r.task_id:
+                    p.setPen(Qt.NoPen)
+                    p.setBrush(with_alpha(c["text"], .10))
+                    p.drawRoundedRect(QRectF(PAD - 2, y, W - 2 * PAD + 4, 25), 5, 5)
+            if r.kind in ("task", "overdue"):   # priority circle: orange p1, blue p2; filled once completed
                 ring = c["p1"] if r.priority == 4 else c["p2"] if r.priority == 3 else c["sub"]
                 p.setBrush(Qt.NoBrush)
                 p.setPen(QPen(c["halo"], 3.2))
                 p.drawEllipse(PAD + 2, y + 6, 12, 12)
                 p.setPen(QPen(ring, 1.6))
+                p.setBrush(ring if r.done else Qt.NoBrush)
                 p.drawEllipse(PAD + 2, y + 6, 12, 12)
-            tcol = c["danger"] if r.kind in ("overdue", "deadline") else c["faint"] if r.past else c["sub"]
+            dim = r.past or r.done
+            tcol = c["faint"] if dim else c["danger"] if r.kind in ("overdue", "deadline") else c["sub"]
             text(PAD + 24, y, r.time, f_row, tcol, 92)
             x = PAD + 24 + 100
             cw = min(QFontMetrics(f_small).horizontalAdvance(r.course) + 4, 130) if r.course else 0
-            tw = text(x, y, r.title, f_row, c["faint"] if r.past else c["text"], right - x - (cw + 10 if cw else 0))
+            tw = text(x, y, r.title, f_row, c["faint"] if dim else c["text"], right - x - (cw + 10 if cw else 0), strike=r.done)
             if r.course:
-                text(x + tw + 10, y + 1, r.course, f_small, c["faint"] if r.past else course_color(r.course, c["light"]), cw)
+                text(x + tw + 10, y + 1, r.course, f_small, c["faint"] if dim else course_color(r.course, c["light"]), cw)
             y += 25
         if len(rows) > shown:
             text(PAD + 124, y, tr(f"외 {len(rows) - shown}개", f"+{len(rows) - shown} more"), f_row, c["sub"])
@@ -797,6 +944,7 @@ class Settings(QDialog):
         self.setMinimumWidth(540)
         tabs = QTabWidget()
         tabs.addTab(self.appearance(), tr("모양", "Appearance"))
+        tabs.addTab(self.list_tab(), tr("목록", "List"))
         tabs.addTab(self.behavior(), tr("동작", "Behavior"))
         tabs.addTab(self.accounts(), tr("계정", "Accounts"))
         bb = QDialogButtonBox(QDialogButtonBox.Save | QDialogButtonBox.Cancel)
@@ -851,9 +999,26 @@ class Settings(QDialog):
         form.addRow("", self.bar)
         return w
 
+    def list_tab(self):
+        w = QWidget()
+        form = QFormLayout(w)
+        self.check(tr("끝난 일정", "Finished events"), "show_past", form)
+        self.check(tr("지난 날로 계획된 할 일", "Tasks planned for earlier days"), "show_carried", form)
+        self.check(tr("지금 / 다음", "Now / Next"), "show_upcoming", form)
+        self.check(tr("iCampus 할 일만", "Only iCampus tasks"), "only_icampus", form)
+        return w
+
     def behavior(self):
         w = QWidget()
         form = QFormLayout(w)
+        self.sync_box = QComboBox()
+        self.sync_opts = [5, 15, 30, 60]
+        self.sync_box.addItems([tr(f"{m}분마다", f"Every {m} min") for m in self.sync_opts])
+        cur = int(self.st.cfg.get("sync_min", 15))
+        self.sync_box.setCurrentIndex(self.sync_opts.index(cur) if cur in self.sync_opts else 1)
+        self.sync_box.currentIndexChanged.connect(lambda i: self.live(sync_min=self.sync_opts[i]))
+        form.addRow(tr("동기화", "Sync"), self.sync_box)
+        self.check(tr("마감 알림 (6시간·1시간 전)", "Deadline alarms (6 h and 1 h before)"), "alarms", form)
         self.lang = QComboBox()
         self.lang.addItems(["English", "한국어"])
         self.lang.setCurrentIndex(1 if self.st.cfg["lang"] == "ko" else 0)
@@ -954,6 +1119,7 @@ class Settings(QDialog):
 
 class Bus(QObject):
     fetched = Signal(dict)
+    task_op = Signal(str, str, str)   # task id, "close"/"reopen", error text ("" = ok)
     update = Signal(object, bool)     # (build, asset_id, size) or error text, manual?
     installed = Signal(object)        # path to start, or error text
 
@@ -969,12 +1135,13 @@ class State:
         self.snap = demo_snapshot() if demo else load_json(CACHE_FILE, {"fetched": 0, "tasks": [], "events": [], "errors": []})
         self.busy = False
         self.start_move = lambda: None
+        self.done = {}   # task id -> completion time; shown struck through until purged
 
     def now(self):
         return self.fixed_now or datetime.now()
 
     def view(self):
-        return build(self.snap, self.now())
+        return build(self.snap, self.now(), self.cfg, self.done)
 
     def save_cfg(self):
         if not self.demo:
@@ -1085,6 +1252,7 @@ def main():
         st.snap = snap
         if not st.demo:
             save_json(CACHE_FILE, snap)
+        check_alarms()
         if snap["errors"]:   # e.g. just after login, before Wi-Fi is up: try again soon, backing off to 10 min
             retry[0] = min(retry[0] * 2, 600) if retry[0] else 60
             retry_timer.start(retry[0] * 1000)
@@ -1109,6 +1277,7 @@ def main():
         LANG["en"] = st.cfg["lang"] != "ko"
         build_menu()
         ov.apply_flags()
+        t2.start(max(5, int(st.cfg.get("sync_min", 15))) * 60_000)
         refresh()
         visibility()
 
@@ -1124,6 +1293,84 @@ def main():
         if dialog[0]:
             dialog[0].sync_corner()
     st.start_move = start_move
+
+    # ---- Ctrl+click to complete; a second click within 8 s undoes it
+    UNDO_MS = 8000
+
+    def on_task_click(tid):
+        tok = st.cfg["todoist_token"]
+        if st.demo:
+            op = "reopen" if tid in st.done else "close"
+            bus.task_op.emit(tid, op + "-local", "")
+            return
+        if not tok:
+            return
+        op = "reopen" if tid in st.done else "close"
+        if op == "close":
+            st.done[tid] = time.time()
+        else:
+            st.done.pop(tid, None)
+        refresh()
+
+        def work():
+            try:
+                todoist_post(tok, f"/tasks/{tid}/{op}")
+                bus.task_op.emit(tid, op, "")
+            except Exception as e:
+                bus.task_op.emit(tid, op, str(e) or type(e).__name__)
+        threading.Thread(target=work, daemon=True).start()
+
+    def on_task_op(tid, op, err):
+        if op.endswith("-local"):   # demo mode: no Todoist
+            op = op[:-6]
+            if op == "close":
+                st.done[tid] = time.time()
+            else:
+                st.done.pop(tid, None)
+        elif err:
+            if op == "close":
+                st.done.pop(tid, None)
+            else:
+                st.done[tid] = time.time()
+            tray.showMessage("Study Overlay", err)
+            refresh()
+            return
+        if op == "close":
+            QTimer.singleShot(UNDO_MS, lambda: purge(tid))
+        refresh()
+    bus.task_op.connect(on_task_op)
+
+    def purge(tid):
+        t0 = st.done.get(tid)
+        if t0 is None or time.time() - t0 < UNDO_MS / 1000 - 0.5:
+            return   # undone, or completed again later (that click has its own timer)
+        st.done.pop(tid, None)
+        st.snap["tasks"] = [t for t in st.snap.get("tasks", []) if t["id"] != tid]
+        if not st.demo:
+            save_json(CACHE_FILE, st.snap)
+        refresh()
+    ov.on_task_click = on_task_click
+
+    def poll_ctrl():   # every 80 ms: Ctrl held with the pointer over the list makes it clickable
+        want = ov.isVisible() and not ov.moving and ctrl_down() and ov.frameGeometry().contains(QCursor.pos())
+        ov.set_interactive(want)
+
+    # ---- deadline alarms
+    fired = load_json(ALARM_FILE, {}) if not demo else {}
+
+    def check_alarms():
+        if st.demo or not st.cfg.get("alarms", True):
+            return
+        now = st.now()
+        due = alarms_due(deadlines(st.snap), fired, now)
+        save_json(ALARM_FILE, fired)
+        if not due:
+            return
+        first = due[0]
+        title = tr("마감 ", "Due ") + until(now, first["at"])
+        body = "\n".join((f"[{d['course']}] " if d["course"] else "") + d["title"] + ("" if d is first else f"  {hm(d['at'])}")
+                         for d in due[:5])
+        tray.showMessage(title, body, QSystemTrayIcon.Information, 15000)
     ov.on_move_done = move_done
 
     # ---- settings
@@ -1244,15 +1491,17 @@ def main():
         elif not want and ov.isVisible():
             ov.hide()
 
-    def tick():   # every 30 s: redraw (Now/Next, time bar, past events), day rollover
+    def tick():   # every 30 s: redraw (Now/Next, time bar, past events), day rollover, alarms
         d = st.now().date()
         if d != last_day[0]:
             last_day[0] = d
             sync()
         refresh()
+        check_alarms()
 
     t1 = QTimer(); t1.timeout.connect(tick); t1.start(30_000)
-    t2 = QTimer(); t2.timeout.connect(sync); t2.start(REFRESH_MIN * 60_000)
+    t2 = QTimer(); t2.timeout.connect(sync); t2.start(max(5, int(st.cfg.get("sync_min", REFRESH_MIN))) * 60_000)
+    t5 = QTimer(); t5.timeout.connect(poll_ctrl); t5.start(80)
     t3 = QTimer(); t3.timeout.connect(visibility); t3.start(2_000)
     t4 = QTimer(); t4.timeout.connect(check_updates); t4.start(6 * 3600_000)
     QTimer.singleShot(20_000, check_updates)
