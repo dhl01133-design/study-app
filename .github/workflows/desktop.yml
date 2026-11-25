@@ -20,21 +20,27 @@ jobs:
       - run: pip install -r desktop/requirements.txt
       - name: Check the Windows-only parts (click-through, Ctrl mode, full-screen test)
         run: python desktop/tests/win_check.py
+      - name: Calendar parser test
+        run: python desktop/tests/test_ics.py
       - name: Build StudyOverlay.exe
         working-directory: desktop
         run: |
           echo "BUILD = ${{ github.run_number }}" > build_info.py
-          pyinstaller --onefile --noconsole --name StudyOverlay --exclude-module tkinter overlay.py
+          pyinstaller StudyOverlay.spec
       - name: Smoke test (render demo screenshots)
         shell: pwsh
         run: |
           $exe = "desktop/dist/StudyOverlay.exe"
+          Start-Process $exe -ArgumentList "--check-tz tz.txt" -Wait
+          Get-Content tz.txt
+          if ((Get-Content tz.txt) -ne "tz ok") { throw "time zones missing from the bundle" }
           foreach ($a in @("--shot shot_en.png", "--shot shot_ko_dark.png --lang ko --color #1f2a44")) {
             $p = Start-Process $exe -ArgumentList "--demo $a" -PassThru -Wait
             if ($p.ExitCode -ne 0) { throw "exit $($p.ExitCode) for $a" }
           }
           if (!(Test-Path shot_en.png) -or !(Test-Path shot_ko_dark.png)) { throw "no screenshot" }
           Get-Item desktop/dist/StudyOverlay.exe, shot_*.png | Format-Table Name, Length
+          "exe_MB: " + [math]::Round((Get-Item desktop/dist/StudyOverlay.exe).Length / 1MB, 1)
       - name: Measure RAM and CPU against the previous build (demo mode, idle)
         shell: pwsh
         env:

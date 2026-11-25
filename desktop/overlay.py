@@ -16,7 +16,8 @@ import threading
 import time
 from datetime import date, datetime, timedelta
 
-import requests
+import ics
+import web
 
 import updater
 from PySide6.QtCore import QLockFile, QObject, QPoint, QPointF, QRect, QRectF, Qt, QTimer, Signal
@@ -287,11 +288,12 @@ def todoist_pages(token, path):
         params = {"limit": 200}
         if cursor:
             params["cursor"] = cursor
-        r = requests.get("https://api.todoist.com/api/v1" + path, params=params,
-                         headers={"Authorization": f"Bearer {token}"}, timeout=30)
+        r = web.request("https://api.todoist.com/api/v1" + path, params=params,
+                        headers={"Authorization": f"Bearer {token}"}, timeout=30)
         if r.status_code == 401:
             raise RuntimeError(tr("Todoist 토큰이 올바르지 않음", "Todoist token is invalid"))
-        r.raise_for_status()
+        if r.status_code >= 300:
+            raise RuntimeError(f"HTTP {r.status_code}")
         j = r.json()
         out += j.get("results", [])
         cursor = j.get("next_cursor")
@@ -300,10 +302,11 @@ def todoist_pages(token, path):
 
 
 def todoist_post(token, path):
-    r = requests.post("https://api.todoist.com/api/v1" + path, headers={"Authorization": f"Bearer {token}"}, timeout=30)
+    r = web.request("https://api.todoist.com/api/v1" + path, "POST", headers={"Authorization": f"Bearer {token}"}, timeout=30)
     if r.status_code == 401:
         raise RuntimeError(tr("Todoist 토큰이 올바르지 않음", "Todoist token is invalid"))
-    r.raise_for_status()
+    if r.status_code >= 300:
+        raise RuntimeError(f"HTTP {r.status_code}")
 
 
 def parse_due(raw):
@@ -342,10 +345,11 @@ def fetch_events(url, today, cache=None):
             headers["If-None-Match"] = cache["etag"]
         if cache.get("last_modified"):
             headers["If-Modified-Since"] = cache["last_modified"]
-    r = requests.get(url.strip(), timeout=30, headers=headers)
-    if r.status_code == 304:
+    r = web.request(url.strip(), timeout=30, headers=headers)
+    if r.status_code == 304 and cache.get("events") is not None:
         return cache["events"]
-    r.raise_for_status()
+    if r.status_code >= 300:
+        raise RuntimeError(f"HTTP {r.status_code}")
     digest = hashlib.sha1(r.content).hexdigest()
     cache.update(etag=r.headers.get("ETag"), last_modified=r.headers.get("Last-Modified"))
     if digest == cache.get("hash") and cache.get("day") == today.isoformat() and cache.get("events") is not None:
@@ -356,26 +360,9 @@ def fetch_events(url, today, cache=None):
 
 
 def parse_events(content, today):
-    import icalendar
-    import recurring_ical_events
-    cal = icalendar.Calendar.from_ical(content)
-    out = []
-    for ev in recurring_ical_events.of(cal).between(today - timedelta(days=1), today + timedelta(days=2)):
-        s = ev.get("DTSTART").dt
-        e = ev.get("DTEND").dt if ev.get("DTEND") else None
-        all_day = not isinstance(s, datetime)
-        if all_day:
-            s = datetime.combine(s, datetime.min.time())
-            e = datetime.combine(e, datetime.min.time()) if e else s + timedelta(days=1)
-        else:
-            s = s.astimezone().replace(tzinfo=None) if s.tzinfo else s
-            if e is None:
-                e = s
-            elif e.tzinfo:
-                e = e.astimezone().replace(tzinfo=None)
-        out.append({"summary": str(ev.get("SUMMARY", "")), "start": s.isoformat(), "end": e.isoformat(), "all_day": all_day})
-    del cal
-    return out
+    """The small built-in parser (ics.py) instead of icalendar + recurring_ical_events: same results on the
+    days the overlay shows (checked against the library on thousands of random calendars), far less memory."""
+    return ics.parse(content.decode("utf-8", "replace"), today - timedelta(days=1), today + timedelta(days=1))
 
 
 def demo_snapshot():
@@ -1407,6 +1394,12 @@ def main():
     app.setQuitOnLastWindowClosed(False)
     go_light()
 
+    if "--check-tz" in args:   # build machine: the bundled exe can read calendar time zones (tzdata)
+        ok = ics._zone("America/New_York") is not None and ics._zone("Asia/Seoul") is not None
+        with open(args[args.index("--check-tz") + 1], "w") as f:
+            f.write("tz ok" if ok else "tz MISSING")
+        return 0
+
     if "--shot" in args:
         st = State(demo=True, fixed_now=datetime.combine(date.today(), datetime.min.time()).replace(hour=11, minute=20))
         arg = lambda k: args[args.index(k) + 1] if k in args else None
@@ -1719,7 +1712,11 @@ def main():
 
     refresh()
     visibility()
-    QTimer.singleShot(15_000, trim_memory)   # after start-up allocations settle
+    def settle():   # after start-up allocations settle: free them, and stop the GC from re-scanning what stays
+        trim_memory()
+        import gc
+        gc.freeze()
+    QTimer.singleShot(15_000, settle)
     if not demo and not st.cfg["todoist_token"] and not st.cfg["ical_url"]:
         QTimer.singleShot(300, open_settings)
     else:

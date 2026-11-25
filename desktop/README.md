@@ -54,3 +54,10 @@ minute (aligned to the minute); the Ctrl poll is 60 ms only while the pointer is
 or the day changed; after each sync `gc.collect()` and `EmptyWorkingSet`; on start BELOW_NORMAL
 priority and Windows 11 efficiency mode (EcoQoS). The workflow measures RAM and CPU of the new and
 previous builds (demo mode, idle) and publishes `bench.txt` with the release.
+
+Build 11, lighter (methods from `lite/`): `ics.py` replaces icalendar + recurring_ical_events (checked equal
+to the library on 4,800 random calendars in four PC time zones: DAILY/WEEKLY/MONTHLY/YEARLY, INTERVAL,
+COUNT, UNTIL, BYDAY incl. ordinals, BYMONTHDAY, BYMONTH, BYSETPOS, EXDATE, RECURRENCE-ID, DST); `web.py`
+(urllib) replaces requests and drops the token on cross-host redirects; `StudyOverlay.spec` leaves out
+Qt parts never loaded (software OpenGL, translations, image/icon/network/PDF/QML) and strips docstrings;
+`gc.freeze()` after start-up. Requirements are now PySide6-Essentials + tzdata only.

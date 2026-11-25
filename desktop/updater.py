@@ -15,7 +15,7 @@ import re
 import subprocess
 import sys
 
-import requests
+import web
 
 try:
     from build_info import BUILD          # written by the GitHub workflow
@@ -53,10 +53,11 @@ def _headers(token, raw=False):
 
 def check(token):
     """(build, asset_id, size) of the release, or raises with a short reason."""
-    r = requests.get(f"https://api.github.com/repos/{REPO}/releases/tags/{TAG}", headers=_headers(token), timeout=30)
+    r = web.request(f"https://api.github.com/repos/{REPO}/releases/tags/{TAG}", headers=_headers(token), timeout=30)
     if r.status_code in (401, 403, 404):
         raise RuntimeError("GitHub token can't read the release")
-    r.raise_for_status()
+    if r.status_code >= 300:
+        raise RuntimeError(f"GitHub: HTTP {r.status_code}")
     j = r.json()
     m = re.search(r"build\s+(\d+)", j.get("name") or "")
     asset = next((a for a in j.get("assets", []) if a.get("name") == ASSET), None)
@@ -71,12 +72,12 @@ def install(token, asset_id, size):
         raise RuntimeError("not a built exe")
     target = sys.executable
     new = target + ".new"
-    with requests.get(f"https://api.github.com/repos/{REPO}/releases/assets/{asset_id}",
-                      headers=_headers(token, raw=True), stream=True, timeout=120) as r:
-        r.raise_for_status()
-        with open(new, "wb") as f:
-            for chunk in r.iter_content(1 << 16):
-                f.write(chunk)
+    with open(new, "wb") as f:   # GitHub redirects to storage; web.request drops the token on the way
+        r = web.request(f"https://api.github.com/repos/{REPO}/releases/assets/{asset_id}",
+                        headers=_headers(token, raw=True), timeout=120, stream_to=f)
+    if r.status_code >= 300:
+        os.remove(new)
+        raise RuntimeError(f"GitHub: HTTP {r.status_code}")
     if os.path.getsize(new) != size:
         os.remove(new)
         raise RuntimeError("download incomplete")
