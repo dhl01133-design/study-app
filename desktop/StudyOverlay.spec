@@ -16,13 +16,14 @@ def keep(entry):
 
 a = Analysis(
     ["run.py"],
-    hiddenimports=["tzdata"],                 # zoneinfo on Windows needs the tzdata package for calendar time zones
+    # zoneinfo on Windows needs the tzdata package; shiboken's start-up code needs __future__
+    hiddenimports=["tzdata", "__future__"],
     datas=collect_data_files("tzdata"),
-    excludes=["tkinter", "unittest", "pydoc", "doctest", "lib2to3", "sqlite3", "requests", "icalendar",
-              "recurring_ical_events", "PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtOpenGL"],
-    optimize=2,                               # no docstrings or asserts in the bundled code
+    # standard-library modules stay: PySide6 imports some of them at start-up (build 11 lost __future__ that way)
+    excludes=["tkinter", "requests", "icalendar", "recurring_ical_events",
+              "PySide6.QtNetwork", "PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtOpenGL"],
 )
 a.binaries = [b for b in a.binaries if keep(b)]
 a.datas = [d for d in a.datas if keep(d)]
-pyz = PYZ(a.pure, optimize=2)
+pyz = PYZ(a.pure)
 exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name=os.environ.get("EXE_NAME", "StudyOverlay"), console=os.environ.get("CONSOLE") == "1", upx=False, strip=False)

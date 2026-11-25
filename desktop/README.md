@@ -59,5 +59,5 @@ Build 11, lighter (methods from `lite/`): `ics.py` replaces icalendar + recurrin
 to the library on 4,800 random calendars in four PC time zones: DAILY/WEEKLY/MONTHLY/YEARLY, INTERVAL,
 COUNT, UNTIL, BYDAY incl. ordinals, BYMONTHDAY, BYMONTH, BYSETPOS, EXDATE, RECURRENCE-ID, DST); `web.py`
 (urllib) replaces requests and drops the token on cross-host redirects; `StudyOverlay.spec` leaves out
-Qt parts never loaded (software OpenGL, translations, image/icon/network/PDF/QML) and strips docstrings;
+Qt parts never loaded (software OpenGL, translations, image/icon/network/PDF/QML);
 `gc.freeze()` after start-up. Requirements are now PySide6-Essentials + tzdata only.
