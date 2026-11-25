@@ -219,7 +219,7 @@ namespace StudyOverlayLite
             Native.Present(Handle, pic, pos, (byte)Math.Round(255 * Math.Max(0.25, Math.Min(1, S.Cfg.D("opacity")))));
         }
 
-        public Bitmap RenderShot(Color bg)
+        public Bitmap RenderShot(Color bg, bool busy = false)
         {
             var v = S.GetView();
             float k = K * 2 / Dpi;
@@ -227,6 +227,14 @@ namespace StudyOverlayLite
             using (var g = Graphics.FromImage(bmp))
             {
                 g.Clear(bg);
+                if (busy)   // a deliberately messy wallpaper, to check the text outline
+                {
+                    var rnd = new Random(3);
+                    for (int x = 0; x < bmp.Width; x += 36)
+                        for (int y = 0; y < bmp.Height; y += 36)
+                            using (var b = new SolidBrush(Color.FromArgb(rnd.Next(30, 256), rnd.Next(30, 256), rnd.Next(30, 256))))
+                                g.FillRectangle(b, x, y, 36, 36);
+                }
                 g.TranslateTransform(40, 40);
                 g.ScaleTransform(k, k);
                 Paint(g, v);

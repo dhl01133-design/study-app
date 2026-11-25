@@ -34,7 +34,8 @@ namespace StudyOverlayLite
                 if (Arg("--color") != null) st.Cfg["text_color"] = Arg("--color");
                 L.En = st.Cfg.S("lang") != "ko";
                 using (var ov = new Overlay(st))
-                using (var bmp = ov.RenderShot(Color.FromArgb(0x2B, 0x3A, 0x4A)))
+                if (Arg("--outline") != null) st.Cfg["outline"] = Arg("--outline");
+                using (var bmp = ov.RenderShot(Color.FromArgb(0x2B, 0x3A, 0x4A), Array.IndexOf(args, "--busy") >= 0))
                     bmp.Save(Arg("--shot"), ImageFormat.Png);
                 return 0;
             }

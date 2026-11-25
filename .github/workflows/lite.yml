@@ -28,7 +28,10 @@ jobs:
       - name: Screenshots
         shell: pwsh
         run: |
-          foreach ($a in @("--shot shot_lite.png", "--shot shot_lite_dark.png --bg dark --color #F4F4F5 --lang ko")) {
+          foreach ($a in @("--shot shot_lite.png", "--shot shot_lite_dark.png --bg dark --color #F4F4F5 --lang ko",
+                         "--shot shot_outline_light.png --bg none --color #F4F4F5 --busy",
+                         "--shot shot_outline_dark.png --bg none --color #111111 --busy",
+                         "--shot shot_outline_off.png --bg none --color #F4F4F5 --busy --outline shadow")) {
             $p = Start-Process out/StudyOverlayLite.exe -ArgumentList $a -PassThru -Wait
             if ($p.ExitCode -ne 0) { throw "shot failed: $a" }
           }
@@ -65,6 +68,6 @@ jobs:
         run: |
           touch bench.txt
           gh release delete lite --yes --cleanup-tag || true
-          gh release create lite out/StudyOverlayLite.exe shot_lite.png shot_lite_dark.png selftest.txt bench.txt \
+          gh release create lite out/StudyOverlayLite.exe shot_lite.png shot_lite_dark.png shot_outline_light.png shot_outline_dark.png shot_outline_off.png selftest.txt bench.txt \
             --title "Study Overlay Lite build ${{ github.run_number }}" \
             --notes "Automatic build from ${{ github.sha }}"
