@@ -1,0 +1,70 @@
+name: build StudyOverlayLite
+
+on:
+  push:
+    branches: [main]
+    paths: ["lite/**", ".github/workflows/lite.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # lets the job publish the "lite" release
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Stamp the build number
+        shell: pwsh
+        run: Set-Content lite/BuildInfo.cs "namespace StudyOverlayLite { static class BuildInfo { public const int Build = ${{ github.run_number }}; } }"
+      - name: Build (.NET Framework 4.8)
+        run: dotnet build lite/StudyOverlayLite.csproj -c Release -o out -nologo
+      - name: Self-test (logic and window checks)
+        shell: pwsh
+        run: |
+          $p = Start-Process out/StudyOverlayLite.exe -ArgumentList "--selftest selftest.txt" -PassThru -Wait
+          Get-Content selftest.txt
+          if ($p.ExitCode -ne 0) { throw "selftest failed ($($p.ExitCode))" }
+      - name: Screenshots
+        shell: pwsh
+        run: |
+          foreach ($a in @("--shot shot_lite.png", "--shot shot_lite_dark.png --bg dark --color #F4F4F5 --lang ko")) {
+            $p = Start-Process out/StudyOverlayLite.exe -ArgumentList $a -PassThru -Wait
+            if ($p.ExitCode -ne 0) { throw "shot failed: $a" }
+          }
+          Get-Item out/StudyOverlayLite.exe, shot_lite*.png | Format-Table Name, Length
+      - name: Measure RAM and CPU against the Python app (demo mode, idle)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        continue-on-error: true
+        run: |
+          gh release download desktop -p StudyOverlay.exe -D py 2>$null
+          $rows = @()
+          foreach ($e in @("py/StudyOverlay.exe", "out/StudyOverlayLite.exe")) {
+            if (!(Test-Path $e)) { continue }
+            $p = Start-Process $e -ArgumentList "--demo" -PassThru
+            Start-Sleep 25
+            $ids = @($p.Id) + @(Get-CimInstance Win32_Process -Filter "ParentProcessId=$($p.Id)" | % ProcessId)
+            $cpu0 = ($ids | % { (Get-Process -Id $_).TotalProcessorTime.TotalMilliseconds } | Measure -Sum).Sum
+            Start-Sleep 60
+            $procs = $ids | % { Get-Process -Id $_ }
+            $cpu1 = ($procs | % { $_.TotalProcessorTime.TotalMilliseconds } | Measure -Sum).Sum
+            $rows += [pscustomobject]@{ exe = $e; processes = $procs.Count
+              working_set_MB = [math]::Round((($procs | % { $_.WorkingSet64 } | Measure -Sum).Sum / 1MB), 1)
+              private_MB = [math]::Round((($procs | % { $_.PrivateMemorySize64 } | Measure -Sum).Sum / 1MB), 1)
+              cpu_ms_per_min = [math]::Round($cpu1 - $cpu0, 0) }
+            $ids | % { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+            Start-Sleep 2
+          }
+          $rows | Format-Table -AutoSize | Out-String -Width 200 | Tee-Object bench.txt
+      - name: Publish as release "lite"
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          touch bench.txt
+          gh release delete lite --yes --cleanup-tag || true
+          gh release create lite out/StudyOverlayLite.exe shot_lite.png shot_lite_dark.png selftest.txt bench.txt \
+            --title "Study Overlay Lite build ${{ github.run_number }}" \
+            --notes "Automatic build from ${{ github.sha }}"

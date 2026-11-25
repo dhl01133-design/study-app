@@ -4,3 +4,5 @@ local.properties
 *.iml
 .idea/
 desktop/build_info.py
+lite/bin/
+lite/obj/
