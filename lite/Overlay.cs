@@ -139,7 +139,7 @@ namespace StudyOverlayLite
             {
                 var cp = base.CreateParams;
                 cp.ExStyle |= Native.WS_EX_LAYERED | Native.WS_EX_TOOLWINDOW | Native.WS_EX_NOACTIVATE | Native.WS_EX_TRANSPARENT;
-                if (S.Cfg.B("on_top")) cp.ExStyle |= Native.WS_EX_TOPMOST;
+                if (S != null && S.Cfg.B("on_top")) cp.ExStyle |= Native.WS_EX_TOPMOST;   // S is null while the base constructor runs
                 return cp;
             }
         }
