@@ -43,6 +43,15 @@ jobs:
           if (!(Test-Path shot_en.png) -or !(Test-Path shot_ko_dark.png)) { throw "no screenshot" }
           Get-Item desktop/dist/StudyOverlay.exe, shot_*.png | Format-Table Name, Length
           "exe_MB: " + [math]::Round((Get-Item desktop/dist/StudyOverlay.exe).Length / 1MB, 1)
+      - name: Debug a failed exe with a console build
+        if: failure()
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $env:CONSOLE = "1"; $env:EXE_NAME = "StudyOverlayDebug"
+          pyinstaller StudyOverlay.spec 2>&1 | Select-String -Pattern "WARNING|ERROR" | Select-Object -First 30
+          & dist/StudyOverlayDebug.exe --check-tz "$PWD/tz.txt" 2>&1 | Select-Object -First 60
+          "exit: $LASTEXITCODE"
       - name: Measure RAM and CPU against the previous build (demo mode, idle)
         shell: pwsh
         env:

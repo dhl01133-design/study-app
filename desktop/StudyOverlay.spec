@@ -1,5 +1,7 @@
 # PyInstaller build for StudyOverlay.exe (one file). Leaves out Qt parts the overlay never loads, so the exe is
 # smaller and each start unpacks less: software OpenGL, translations, image/icon plugins, network, PDF, QML.
+import os
+
 from PyInstaller.utils.hooks import collect_data_files
 
 DROP = ("opengl32sw.dll", "d3dcompiler", "qt6pdf", "qt6network", "qt6qml", "qt6quick", "qt6opengl", "qt6svg",
@@ -23,4 +25,4 @@ a = Analysis(
 a.binaries = [b for b in a.binaries if keep(b)]
 a.datas = [d for d in a.datas if keep(d)]
 pyz = PYZ(a.pure, optimize=2)
-exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name="StudyOverlay", console=False, upx=False, strip=False)
+exe = EXE(pyz, a.scripts, a.binaries, a.datas, [], name=os.environ.get("EXE_NAME", "StudyOverlay"), console=os.environ.get("CONSOLE") == "1", upx=False, strip=False)
