@@ -31,6 +31,7 @@ def adb(*args, check=True):
 
 
 def shot(name):
+    dismiss_system_dialogs(nodes())
     data = subprocess.run(["adb", "exec-out", "screencap", "-p"], capture_output=True).stdout
     with open(f"{OUT}/{name}.png", "wb") as f:
         f.write(data)
@@ -52,8 +53,22 @@ def nodes():
     return out
 
 
+def dismiss_system_dialogs(ns):
+    """The emulator's launcher sometimes hangs and shows "isn't responding"; tap Wait so it doesn't block us."""
+    if any(t.endswith("isn't responding") for t, _ in ns):
+        for t, b in ns:
+            if t == "Wait":
+                adb("shell", "input", "tap", str((b[0] + b[2]) // 2), str((b[1] + b[3]) // 2))
+                time.sleep(1)
+                return True
+    return False
+
+
 def find(pred):
-    for text, b in nodes():
+    ns = nodes()
+    if dismiss_system_dialogs(ns):
+        ns = nodes()
+    for text, b in ns:
         if text and pred(text):
             return text, ((b[0] + b[2]) // 2, (b[1] + b[3]) // 2), b
     return None
@@ -70,6 +85,7 @@ def crashed():
 
 
 apk = sys.argv[1]
+adb("shell", "settings", "put", "global", "hide_error_dialogs", "1", check=False)
 log("install: " + adb("install", "-r", "-g", apk).strip())
 adb("shell", "pm", "grant", PKG, "android.permission.POST_NOTIFICATIONS", check=False)
 adb("logcat", "-c")
